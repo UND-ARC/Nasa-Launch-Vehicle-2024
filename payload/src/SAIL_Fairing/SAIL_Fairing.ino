@@ -3,6 +3,9 @@
 // Longer messages not tested
 // 4S LiPo connected to MOSFET. 9V doesn't discharged enough
 
+#define SEALEVELPRESSURE_INHG 29.96   // Sea level pressure in inches of mercury, adjust as per your location
+#define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
+
 #include <SPI.h>
 #include <RH_RF95.h>
 #include "Adafruit_BMP3XX.h"
@@ -25,69 +28,17 @@ int R_LED = 5;
 int G_LED = 6;
 int B_LED = 9;
 
-// Define times and duration here
-int times = 3;
-int duration = 500;
-
 //This is for the BMP390 barometer
 Adafruit_BMP3XX bmp;
-double inHg = 30.07; // enter current location altimiter value
-double hPa = inHg * 33.8639;
-#define SEALEVELPRESSURE_HPA (hPa) // default: 1013.25
+
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
-
-/************ LED Functions ***************/
-
-void flashWhiteLED(int duration) {
-  digitalWrite(R_LED, LOW); // Turn on LED (white)
-  digitalWrite(G_LED, LOW);
-  digitalWrite(B_LED, LOW);
-  delay(duration);
-  digitalWrite(R_LED, HIGH); // Turn off LED
-  digitalWrite(G_LED, HIGH);
-  digitalWrite(B_LED, HIGH);
-  delay(duration);
-}
-
-void flashRedLED(int duration, unsigned long durationMillis) {
-  unsigned long startTime = millis(); // Get the start time
-  while (millis() - startTime < durationMillis) { // Repeat until the specified duration elapses
-    digitalWrite(R_LED, LOW); // Turn on the LED (red)
-    delay(duration);
-    digitalWrite(R_LED, HIGH); // Turn off the LED
-    delay(duration);
-  }
-}
-
-void flashGreenLED(int duration, unsigned long durationMillis) {
-  for (int i = 0; i < times; i++) {
-    digitalWrite(G_LED, LOW); // Turn on LED (green)
-    delay(duration);
-    digitalWrite(G_LED, HIGH); // Turn off LED
-    delay(duration);
-  }
-}
-
-void solidWhiteLED(int times, int duration) {
-    digitalWrite(R_LED, LOW); // Turn on LED (white)
-    digitalWrite(G_LED, LOW);
-    digitalWrite(B_LED, LOW);
-    delay(duration);
-    digitalWrite(R_LED, HIGH); // Turn off LED
-    digitalWrite(G_LED, HIGH);
-    digitalWrite(B_LED, HIGH);
-    delay(duration);
-}
-
-/******** END OF LED FUNCTIONS **********/
 
 bool sendMessage(String message) {
   if (rf95.send((uint8_t *)message.c_str(), message.length())) {  // message.length()+1?
     rf95.waitPacketSent();
     Serial.println("Message sent successfully: " + message);
-    solidWhiteLED(times, duration);
     return true; // Message sent successfully
   } else {
     Serial.println("Message failed: " + message);
@@ -95,78 +46,19 @@ bool sendMessage(String message) {
   }
 }
 
-void awaitSignal(int flashDuration) {
-  unsigned long signalStartTime = millis(); // Store the start time of waiting for signal
-  
-  // Flush the receive buffer to discard any previous messages
-  rf95.recv(nullptr, nullptr);  // NEW
-
-  // Wait for a signal with timeout (NEW)
-  while (!rf95.available()) {
-    if (millis() - signalStartTime > SIGNAL_TIMEOUT) { // Timeout
-      Serial.println("Timeout waiting for signal");
-      return;
-    }
-    flashWhiteLED(flashDuration); // Flash white LED while awaiting signal
-    Serial.println("Awaiting signal from Huntsville...");
-  }
-  
-  // Signal received
-  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-  uint8_t len = sizeof(buf);
-  
-  if (rf95.recv(buf, &len)) {
-    Serial.print("Received signal: ");
-    Serial.println((char*)buf);
-    Serial.print("RSSI: ");
-    Serial.println(rf95.lastRssi(), DEC);
-    Serial.print("Received message length: ");
-    Serial.println(len);
-    
-    // Check the received signal
-    if (strcmp((char*)buf, "Go") == 0) {
-      Serial.println("Go signal received.");
-      // Handle Go signal
-      sendMessage("Go signal received, firing at 400ft AGL.");
-      FireBelow400(); // Check altitude for pyro trigger
-      
-    } else if (strcmp((char*)buf, "Check") == 0) {        
-      Serial.println("Check signal received.");
-      // Handle Check signal
-      sendMessage("Fairing checking in.");
-      
-    } else if (strcmp((char*)buf, "Force Open") == 0) {
-      Serial.println("Force Open signal received.");
-      // Handle Force Open signal
-      sendMessage("Force Open received, releasing Fairing.");
-      digitalWrite(13, HIGH);
-      Serial.println("Force Open, pyro firing for 5s.");
-      delay(5000);
-      digitalWrite(13, LOW);
-      Serial.println("End of Force Open, pyro off.");     
-      
-    } else if (strcmp((char*)buf, "Hello Fairing") == 0) {
-      // Reply back "And hello to you, Huntsville"
-      sendMessage("And hello to you, Huntsville. This is Fairing awaiting your signal");
-    }
-  }
-}
-
-void FireBelow400() {   // Need to be able to receive force-open signal
+void fireBelow400() {   // Need to be able to receive force-open signal
   Serial.println("Go signal received: Waiting for altitude to drop below 400ft...");
   while (true) {
     if (millis() - lastAltitudeCheckTime >= 200) { // Check altitude every 200 milliseconds
       lastAltitudeCheckTime = millis(); // Update lastAltitudeCheckTime
-      float altitudeMeters = bmp.readAltitude(SEALEVELPRESSURE_HPA); // Read altitude from BMP390 sensor in meters
-      float altitudeFeet = altitudeMeters * 3.281; // Convert altitude to feet
 
+      float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+      float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
       Serial.print("Altitude: ");
-      Serial.print(altitudeFeet);
-      Serial.println(" ft");
+      Serial.print(altitudeAGL);
+      Serial.println(" ft AGL");
 
-      if (altitudeFeet < 400.0) {
-        // Altitude is below 400ft
-        // Activate pyro charge
+      if (altitudeAGL < 400.0) {
         digitalWrite(13, HIGH);
         Serial.println("Below 400ft, Activating pyro wire.");
         delay(5000);
@@ -209,14 +101,12 @@ void setup() {
   Serial.println("We'll now cycle through each channel, turning each one on for 2 seconds");
   delay(2000);
   digitalWrite(PYRO, HIGH);
-  Serial.println("PYRO is on!");
+  Serial.println("Pyro is on!");
+  delay(5000); // Wait for 5 seconds
 
-  flashRedLED(200, 5000); // Flash the red LED for specified duration and time
   digitalWrite(PYRO, LOW); // Set pyro pin low
   Serial.println("Pyro is off");
-  delay(5000); // Wait for 5 seconds
   ////////////////////////////////////////////////////////////////////////////////////////
-
           
   Serial.println();
   Serial.println("Done with the pyro channel testing");
@@ -231,7 +121,6 @@ void setup() {
   delay(3000);
   if (!bmp.begin_I2C()) {
     Serial.println("Could not find the BMP390 sensor :( Check your soldering and inspect for bad connections");
-    flashRedLED(times, duration);
     delay(3000);
     Serial.println();
     Serial.println("Proceeding with startup");
@@ -246,23 +135,30 @@ void setup() {
     bmp.setOutputDataRate(BMP3_ODR_50_HZ);
      
     Serial.println("Found the BMP390 sensor! Here's some data...");
-    flashGreenLED(times, duration);
     
     for (int i = 0; i <= 10; i++) 
     {
-    Serial.println();
-    Serial.print(F("Temperature = "));
-    Serial.print(bmp.temperature);
-    Serial.println(" *C");
+      Serial.println();
+      float temperatureF = bmp.temperature * 1.8 + 32; // Convert Celsius to Fahrenheit
+      Serial.print(F("Temperature = "));
+      Serial.print(temperatureF);
+      Serial.println(" °F");
 
-    Serial.print(F("Pressure = "));
-    Serial.print(bmp.pressure / 100.0);
-    Serial.println(" hPa");
+      Serial.print("Current Altimeter Rating = ");
+      Serial.print(SEALEVELPRESSURE_INHG);
+      Serial.println(" inHg");
 
-    Serial.print(F("Approx altitude = "));
-    Serial.print(bmp.readAltitude(SEALEVELPRESSURE_HPA));
-    Serial.println(" m"); Serial.println();
-    delay(200);
+      float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+      Serial.print("Approx. Altitude (MSL) = ");
+      Serial.print(altitudeMSL);
+      Serial.println(" ft");
+
+      float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
+      Serial.print("Approx. Altitude (AGL) = ");
+      Serial.print(altitudeAGL);
+      Serial.println(" ft");
+
+      delay(200);
     }
   }
 
@@ -282,28 +178,77 @@ void setup() {
   delay(1000);
   while (!rf95.init()) {
     Serial.println("LoRa radio init failed");
-    flashRedLED(times, duration);
     Serial.println("Uncomment '#define SERIAL_DEBUG' in RH_RF95.cpp for detailed debug info");
     while (1);
   }
   Serial.println("LoRa radio init OK!");
-  flashGreenLED(times, duration);
   
   if (!rf95.setFrequency(RF95_FREQ)) {
     Serial.println("setFrequency failed");
-    flashRedLED(times, duration);
     while (1);
   }
   Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
 
   Serial.println("Fairing setup complete");
-  flashGreenLED(times, duration);
   sendMessage("This is Fairing");
 }
 
 void loop() {
 
-  awaitSignal(2000);
-  delay(300); // need???
+  unsigned long signalStartTime = millis(); // Store the start time of waiting for signal
+  
+  // Flush the receive buffer to discard any previous messages
+  rf95.recv(nullptr, nullptr);  // NEW
 
+  // Wait for a signal with timeout (NEW)
+  while (!rf95.available()) {
+    if (millis() - signalStartTime > SIGNAL_TIMEOUT) { // Timeout
+      Serial.println("Timeout waiting for signal from Huntsville");
+      return;
+    }
+    //Serial.println("Awaiting signal from Huntsville...");
+  }
+  
+  // Signal received
+  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+  uint8_t len = sizeof(buf);
+  
+  if (rf95.recv(buf, &len)) {
+    buf[len] = '\0'; // Null-terminate the received buffer
+    Serial.print("Fairing received signal: ");
+    Serial.println((char*)buf);
+    Serial.print("RSSI: ");
+    Serial.println(rf95.lastRssi(), DEC);
+    Serial.print("Received message length: ");
+    Serial.println(len);
+    
+    // Check the received signal
+    if (strcmp((char*)buf, "Go") == 0) {
+      Serial.println("Go signal received.");
+      // Handle Go signal
+      delay(500);
+      sendMessage("Go signal received. Firing below 400 ft AGL.");
+      fireBelow400();
+      
+    } else if (strcmp((char*)buf, "Check") == 0) {        
+      Serial.println("Check signal received.");
+      // Handle Check signal
+      delay(500);
+      sendMessage("Fairing checking in.");
+      
+    } else if (strcmp((char*)buf, "Force Open") == 0) {
+      Serial.println("Force Open signal received.");
+      // Handle Force Open signal
+      delay(500);
+      sendMessage("Force Open received, releasing Fairing.");
+      Serial.println("Force Open, pyro firing for 5s.");
+      delay(5000);
+      Serial.println("End of Force Open, pyro off.");     
+      
+    } else if (strcmp((char*)buf, "Hello Fairing.") == 0) {
+      // Reply back "And hello to you, Huntsville"
+      delay(500);
+      sendMessage("And hello to you, Huntsville. This is Fairing awaiting your signal.");
+    }
+  }
 }

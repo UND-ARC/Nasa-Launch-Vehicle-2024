@@ -18,6 +18,51 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
 bool activationState = false; // Variable to store the activation state
 
+// LED Pins
+const int RED_PIN   = 19;  // Red pin of RGB LED
+const int GREEN_PIN = 18;  // Green pin of RGB LED
+const int BLUE_PIN  = 17;  // Blue pin of RGB LED
+
+// LED status and flash mode
+int ledColor = 0;  // 0: OFF, 1: Red, 2: Green, 3: Blue
+int flashMode = 0; // 0: Solid, 1: Slow flash, 2: Fast flash
+
+unsigned long previousMillis = 0;   // Store the last time LED was updated
+const long slowFlashInterval = 1000; // Slow flash interval (ms)
+const long fastFlashInterval = 300;  // Fast flash interval (ms)
+
+void updateLED() {
+  switch (ledColor) {
+    case 0: // OFF
+      digitalWrite(RED_PIN, HIGH);
+      digitalWrite(GREEN_PIN, HIGH);
+      digitalWrite(BLUE_PIN, HIGH);
+      break;
+    case 1: // Red
+      digitalWrite(RED_PIN, LOW);
+      digitalWrite(GREEN_PIN, HIGH);
+      digitalWrite(BLUE_PIN, HIGH);
+      break;
+    case 2: // Green
+      digitalWrite(RED_PIN, HIGH);
+      digitalWrite(GREEN_PIN, LOW);
+      digitalWrite(BLUE_PIN, HIGH);
+      break;
+    case 3: // Blue
+      digitalWrite(RED_PIN, HIGH);
+      digitalWrite(GREEN_PIN, HIGH);
+      digitalWrite(BLUE_PIN, LOW);
+      break;
+  }
+}
+
+// Function to set LED color and flash mode
+void setLED(int color, int mode) {
+  ledColor = color;
+  flashMode = mode;
+  updateLED(); // Update LED immediately when setting color and mode
+}
+
 // Function to send a message via LoRa
 bool sendMessage(String message) {
   unsigned long currentMillis = millis();
@@ -42,6 +87,16 @@ void setup() {
   pinMode(BUTTON_BEGIN_DESCENT_PIN, INPUT);
   pinMode(ARM_BUTTON_PIN, INPUT);
   pinMode(CHECK_PIN, INPUT);
+
+  // LED pins
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(BLUE_PIN, OUTPUT);
+
+  digitalWrite(RED_PIN, HIGH);
+  digitalWrite(GREEN_PIN, HIGH);
+  digitalWrite(BLUE_PIN, HIGH);
+
 
   Serial.begin(115200);
   while (!Serial) delay(1);
@@ -112,6 +167,9 @@ void setup() {
   delay(500);
 
   Serial.println("Setup Complete");
+  setLED(2,2);
+  delay(1000);
+  setLED(0,0);
 }
 
 void loop() {
@@ -138,11 +196,29 @@ void loop() {
 
   rf95.recv(nullptr, nullptr);
 
+  // Update LED based on activation state
+  if (activationState) {
+    setLED(2, 0); // Green
+  } else {
+    setLED(0, 0); // OFF
+  }
+
   if (armButtonState == LOW) {
     activationState = true;
   } else {
     activationState = false;
   }
+  
+  // Flash LED based on flash mode
+  unsigned long currentMillis = millis();
+  if (flashMode != 0) {
+    if (flashMode == 1 && currentMillis - previousMillis >= slowFlashInterval) {
+      previousMillis = currentMillis;
+      setLED(ledColor, 0); // Toggle LED color for slow flash
+    } else if (flashMode == 2 && currentMillis - previousMillis >= fastFlashInterval) {
+      previousMillis = currentMillis;
+      setLED(ledColor, 0);
+    }
 
   delay(100);
 
@@ -167,4 +243,5 @@ void loop() {
       delay(200);
     }
   }
+}
 }

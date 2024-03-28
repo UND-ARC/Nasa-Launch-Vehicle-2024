@@ -30,60 +30,6 @@ bool sendMessage(String message) {
   }
 }
 
-void awaitSignal() {
-  unsigned long signalStartTime = millis(); // Store the start time of waiting for signal
-  
-  // Flush the receive buffer to discard any previous messages
-  rf95.recv(nullptr, nullptr);  // NEW
-
-  // Wait for a signal with timeout (NEW)
-  while (!rf95.available()) {
-    if (millis() - signalStartTime > SIGNAL_TIMEOUT) { // Timeout
-      Serial.println("Timeout waiting for signal");
-      return;
-    }
-    Serial.println("Awaiting signal from Huntsville...");
-  }
-  
-  // Signal received
-  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-  uint8_t len = sizeof(buf);
-  
-  if (rf95.recv(buf, &len)) {
-    //buf[len] = '\0'; // Null-terminate the received buffer
-    Serial.print("Received signal: ");
-    Serial.println((char*)buf);
-    Serial.print("RSSI: ");
-    Serial.println(rf95.lastRssi(), DEC);
-    Serial.print("Received message length: ");
-    Serial.println(len);
-    
-    // Check the received signal
-    if (strcmp((char*)buf, "Go") == 0) {
-      Serial.println("Go signal received.");
-      // Handle Go signal
-      sendMessage("Go signal received.");
-      
-    } else if (strcmp((char*)buf, "Check") == 0) {        
-      Serial.println("Check signal received.");
-      // Handle Check signal
-      sendMessage("Fairing checking in.");
-      
-    } else if (strcmp((char*)buf, "Force Open") == 0) {
-      Serial.println("Force Open signal received.");
-      // Handle Force Open signal
-      sendMessage("Force Open received, releasing Fairing.");
-      Serial.println("Force Open, pyro firing for 5s.");
-      delay(5000);
-      Serial.println("End of Force Open, pyro off.");     
-      
-    } else if (strcmp((char*)buf, "Hello Fairing.") == 0) {
-      // Reply back "And hello to you, Huntsville"
-      sendMessage("And hello to you, Huntsville. This is Fairing awaiting your signal.");
-    }
-  }
-}
-
 void setup() {
 
   Serial.begin(9600);
@@ -122,7 +68,61 @@ void setup() {
 
 void loop() {
 
-  awaitSignal();
-  delay(300); // need???
+  unsigned long signalStartTime = millis(); // Store the start time of waiting for signal
+  
+  // Flush the receive buffer to discard any previous messages
+  rf95.recv(nullptr, nullptr);  // NEW
+
+  // Wait for a signal with timeout (NEW)
+  while (!rf95.available()) {
+    if (millis() - signalStartTime > SIGNAL_TIMEOUT) { // Timeout
+      Serial.println("Timeout waiting for signal from Huntsville");
+      return;
+    }
+    //Serial.println("Awaiting signal from Huntsville...");
+  }
+  
+  // Signal received
+  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+  uint8_t len = sizeof(buf);
+  
+  if (rf95.recv(buf, &len)) {
+    buf[len] = '\0'; // Null-terminate the received buffer
+    Serial.print("Fairing received signal: ");
+    Serial.println((char*)buf);
+    Serial.print("RSSI: ");
+    Serial.println(rf95.lastRssi(), DEC);
+    Serial.print("Received message length: ");
+    Serial.println(len);
+    
+    // Check the received signal
+    if (strcmp((char*)buf, "Go") == 0) {
+      Serial.println("Go signal received.");
+      // Handle Go signal
+      delay(500);
+      sendMessage("Go signal received.");
+      
+    } else if (strcmp((char*)buf, "Check") == 0) {        
+      Serial.println("Check signal received.");
+      // Handle Check signal
+      delay(500);
+      sendMessage("Fairing checking in.");
+      
+    } else if (strcmp((char*)buf, "Force Open") == 0) {
+      Serial.println("Force Open signal received.");
+      // Handle Force Open signal
+      delay(500);
+      sendMessage("Force Open received, releasing Fairing.");
+      Serial.println("Force Open, pyro firing for 5s.");
+      delay(5000);
+      Serial.println("End of Force Open, pyro off.");     
+      
+    } else if (strcmp((char*)buf, "Hello Fairing.") == 0) {
+      // Reply back "And hello to you, Huntsville"
+      delay(500);
+      sendMessage("And hello to you, Huntsville. This is Fairing awaiting your signal.");
+    }
+  }
+
 
 }

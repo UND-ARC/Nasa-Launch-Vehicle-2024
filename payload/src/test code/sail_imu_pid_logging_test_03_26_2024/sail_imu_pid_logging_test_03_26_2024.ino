@@ -4,25 +4,23 @@
 #include <utility/imumaths.h>
 #include <SD.h>
 
-#define BNO055_SAMPLERATE_DELAY_MS (10)
-#define ANGULAR_VELOCITY_THRESHOLD 45.0
-
 Adafruit_BNO055 bno = Adafruit_BNO055();
 Servo ESC;
 
-double Kp = 1;
-double Ki = 0;
-double Kd = 0;
+double Kp = 2.0;
+double Ki = 0.2;
+double Kd = 0.001;
+
+double angVel_degrees_s;
 
 double error_prior = 0;
 double integral = 0;
-double setpoint = 0; // Initial setpoint
+unsigned long lastTime = 0;
+double elapsedTime;
 
-const double map_outP_min = -100;
-const double map_outP_max = 100;
-const int map_ESC_pwm_min = 1000;
-const int map_ESC_pwm_max = 1800;
+unsigned long loopLastTime = 0;
 
+double setpoint = 0;
 
 File dataFile;
 
@@ -32,11 +30,15 @@ double readAngularVelocity() {
   return angVelocityData.gyro.z; // Corrected return statement
 }
 
-inline double calculatePID(double error) {
-  double derivative = error - error_prior;
+double calculatePID(double error) {
+  unsigned long now = millis();
+  elapsedTime = (double)(now - lastTime);
+
+  double derivative = (error - error_prior) / elapsedTime;
   integral += error;
   double outP = Kp * error + Ki * integral + Kd * derivative;
   error_prior = error;
+  lastTime = now;
   return outP;
 }
 
@@ -76,50 +78,60 @@ void setup() {
   
   // Write header to the file
   dataFile.println("AngularVelocity,PWM,PIDOutput");
+  
+  // Close the file
   dataFile.close();
+
+  lastTime = millis();
 }
 
 void loop() {
   sensors_event_t angVelocityData;
-  bno.getEvent(&angVelocityData, Adafruit_BNO055::VECTOR_GYROSCOPE);  
+  bno.getEvent(&angVelocityData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+  
   double angular_velocity = readAngularVelocity();
+  double error = setpoint - angular_velocity;
 
-  // Check if the angular velocity exceeds the threshold for correction
-  if (abs(angular_velocity) > 0.785) { // Adjust threshold as needed
-    double error = setpoint - angular_velocity;
-    double outP = calculatePID(error);
-    int ESC_pwm = constrain(map(outP, map_outP_min, map_outP_max, map_ESC_pwm_min, map_ESC_pwm_max), map_ESC_pwm_min, map_ESC_pwm_max);
-    ESC.writeMicroseconds(ESC_pwm);
+  unsigned long currentTime = millis();
 
-  // Open the file in append mode
-  dataFile = SD.open("data.txt", FILE_WRITE);
-  if (dataFile) {
-    // Write data to the file
-    dataFile.print(angular_velocity);
-    dataFile.print(",");
-    dataFile.print(ESC_pwm);
-    dataFile.print(",");
-    dataFile.println(outP);
-    dataFile.close();
+  double outP = calculatePID(error);
+
+  angVel_degrees_s = angular_velocity * (180/PI);
+  
+  int ESC_pwm;
+  if (angVel_degrees_s <= 45) { // Adjust the threshold as needed
+    ESC_pwm = 1000; // Set PWM to minimum if PID output is close to zero
   } else {
-    Serial.println("Error opening data.txt for writing.");
+    ESC_pwm = constrain(map(outP, 0.15, -360, 1000, 1800), 1000, 1800); 
   }
+  ESC.writeMicroseconds(ESC_pwm);
 
-  Serial.print("Angular rad/s: ");
-  Serial.println(angular_velocity); // Corrected printing angular velocity
-  Serial.print("ESC PWM: ");
-  Serial.println(ESC_pwm);
-  Serial.print("PID Output");
-  Serial.println(outP);
- 
-   // Check if the angular velocity exceeds the threshold for correction
-  if (abs(angular_velocity) > 0.785) { // Adjust threshold as needed
-    Serial.println("Tumble state: Yes"); // Print tumble state
-  } else {
-    Serial.println("Tumble state: No"); // Print not in tumble state
+  if (currentTime - loopLastTime >= 50){ 
+    // Open the file in append mode
+    dataFile = SD.open("data.txt", FILE_WRITE);
+    if (dataFile) {
+      // Write data to the file
+      dataFile.print(currentTime);
+      dataFile.print(" : ");
+      dataFile.print(angular_velocity);
+      dataFile.print(",");
+      dataFile.print(ESC_pwm);
+      dataFile.print(",");
+      dataFile.println(outP);
+    
+      // Close the file
+      dataFile.close();
+    } else {
+      Serial.println("Error opening data.txt for writing.");
+    }
+
+    Serial.print("Angular rad/s: ");
+    Serial.println(angular_velocity); // Corrected printing angular velocity
+    Serial.print("ESC PWM: ");
+    Serial.println(ESC_pwm);
+    Serial.print("PID Output");
+    Serial.println(outP);
+
+    loopLastTime = currentTime;
   }
-
-  delay(100);
-
-}
 }
