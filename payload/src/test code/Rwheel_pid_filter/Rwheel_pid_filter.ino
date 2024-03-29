@@ -20,7 +20,7 @@ double outMax = 1900;  // Maximum output value for ESC (in microseconds)
 
 // Define PID sample time (in milliseconds)
 unsigned long lastTime;
-unsigned long sampleTime = 100; // 100 ms
+unsigned long sampleTime = 10; // 100 ms
 
 // Define servo pin
 int servoPin = 23; // Example pin, change to your setup
@@ -38,7 +38,7 @@ enum State {
 State currentState = NOT_TUMBLING;
 
 // Define rolling filter parameters
-const int numReadings = 10; // Number of readings to average
+const int numReadings = 10; // Number of readings to average 10
 double gyroReadings[numReadings]; // Array to store gyro readings
 int currentIndex = 0; // Index to keep track of current position in the array
 double gyroFilteredDeg = 0.0; // Filtered gyro value in degrees per second
