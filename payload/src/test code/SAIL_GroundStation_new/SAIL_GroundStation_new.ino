@@ -5,6 +5,13 @@
 
 #include <SPI.h>
 #include <RH_RF95.h>
+#include <Adafruit_SSD1306.h> // Include the SSD1306 library
+#include <Adafruit_GFX.h>
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+#define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET); // Initialize the OLED display object
 
 #define RFM95_CS                8
 #define RFM95_INT               3
@@ -15,13 +22,13 @@ const int BUTTON_FORCE_OPEN_PIN = 11;  // Pin for "Force Fairing Open" button
 const int BUTTON_BEGIN_DESCENT_PIN = 9;  // Pin for "Begin Controlled Descent" button
 const int ARM_BUTTON_PIN    = 6;   // Pin for the button to activate states
 const int CHECK_PIN         = 12;
-const int ABORT_PIN
+const int ABORT_PIN         = 13;  // NEEDS TO BE CHANGED
 
 //define system led pins
 int R_LED = 9;
 int G_LED = 3;
 int B_LED = 6;
-int Buzzer = 4;
+//int Buzzer = 4;
 
 #define RF95_FREQ 915.0
 
@@ -31,6 +38,17 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT);
 bool activationState = false; // Variable to store the activation state
 unsigned long lastDebounceTime = 0;  // the last time the button input pin was toggled
 unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
+
+unsigned long previousMillis = 0;
+unsigned long currentMillis;
+
+void nonBlockingDelay(unsigned long interval) {
+  currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    // If the specified interval has passed, update previousMillis
+    previousMillis = currentMillis;
+  }
+}
 
 bool sendMessage(String message) {
   if (rf95.send((uint8_t *)message.c_str(), message.length())) {
@@ -43,21 +61,26 @@ bool sendMessage(String message) {
   }
 }
 
-// Function to blink the RGB LED with a specified color and duration
-void blinkRGB(int red, int green, int blue, int duration) {
-  for (int i = 0; i < 5; i++) { // Blink 5 times
-    digitalWrite(R_LED, HIGH);
-    digitalWrite(G_LED, HIGH);
-    digitalWrite(B_LED, HIGH);
-    delay(duration / 2);
-    digitalWrite(R_LED, red == 255 ? LOW : HIGH); // If the color is 255, turn off the LED
-    digitalWrite(G_LED, green == 255 ? LOW : HIGH);
-    digitalWrite(B_LED, blue == 255 ? LOW : HIGH);
-    delay(duration / 2);
-  }
+// Function to display a message on the OLED display
+void displayMessage(const char* message) {
+  display.clearDisplay(); // Clear the display
+  display.setTextSize(1); // Set text size
+  display.setTextColor(SSD1306_WHITE); // Set text color
+  display.setCursor(0, 0); // Set cursor position
+  display.println(message); // Print message
+  display.display(); // Display the message on the OLED
 }
 
+// Define constants for row positions
+#define SENT_MESSAGE_ROW 10
+#define RECEIVED_MESSAGE_ROW 30
+
 void setup() {
+  
+  // Initialize OLED display
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;);
 
   pinMode(RFM95_RST, OUTPUT);
   digitalWrite(RFM95_RST, HIGH);
@@ -83,6 +106,7 @@ void setup() {
   delay(100);
   
   Serial.println("Feather LoRa Ground Station Startup!");
+  displayMessage("Ground Station Startup!");
   delay(1000);
 
   // manual reset
@@ -97,6 +121,7 @@ void setup() {
     while (1);
   }
   Serial.println("LoRa radio init OK!");
+  displayMessage("LoRa radio init OK!");
   delay(1000);
 
   // Defaults after init are 434.0MHz, modulation GFSK_Rb250Fd250, +13dbM
@@ -118,6 +143,7 @@ void setup() {
 
   // Send a message to SAIL
   sendMessage("Hello SAIL");
+  displayMessage("Sent: Hello SAIL");
   delay(500);
 
   // After sending "Hello SAIL" message
@@ -131,6 +157,7 @@ void setup() {
       Serial.println((char*)buf);
       Serial.print("RSSI: ");
       Serial.println(rf95.lastRssi(), DEC);
+      displayMessage((char*)buf);
     } else {
       Serial.println("Receive failed");
     }
@@ -140,6 +167,7 @@ void setup() {
 
   // Send a message to Fairing
   sendMessage("Hello Fairing");
+  displayMessage("Sent: Hello Fairing");
   delay(500);
   
 
@@ -152,6 +180,7 @@ void setup() {
       if (rf95.recv(buf, &len)) {
           Serial.print("Received reply from Fairing: ");
           Serial.println((char*)buf);
+          displayMessage((char*)buf);
       } else {
           Serial.println("Receive from Fairing failed");
       }
@@ -160,7 +189,12 @@ void setup() {
   }
   delay(500);
 
-Serial.println("Setup Complete");
+  Serial.println("Setup Complete");
+  displayMessage("Setup Complete");
+  digitalWrite(G_LED, LOW);
+  nonBlockingDelay(2000);
+  digitalWrite(G_LED, HIGH);
+  }
 }
 
 void loop() {
@@ -171,6 +205,7 @@ void loop() {
   int forceOpenButtonState = digitalRead(BUTTON_FORCE_OPEN_PIN);
   int beginDescentButtonState = digitalRead(BUTTON_BEGIN_DESCENT_PIN);
   int checkButtonState = digitalRead(CHECK_PIN);
+  int abortButtonState = digitalRead (ABORT_PIN);
 
   // Check if ARM button is pressed and update activationState accordingly
   if (armButtonState == LOW) {
@@ -189,6 +224,7 @@ void loop() {
     if (rf95.recv(buf, &len)) {
       Serial.print("Got reply: ");
       Serial.println((char*)buf);
+      displayMessage((char*)buf);
       Serial.print("RSSI: ");
       Serial.println(rf95.lastRssi(), DEC);
     }
@@ -196,47 +232,31 @@ void loop() {
   // Check if activation state is true (arm button is pressed)
   if (activationState) {
     // If activation button is pressed, send the corresponding command
-    if (armButtonState == LOW) {
       Serial.println("ARM button pressed!");
+      displayMessage("ARM button pressed!");
       if (goButtonState == LOW) {
         sendMessage("Go");
-        digitalWrite(G_LED, LOW);
-        delay(2000);
-        digitalWrite(G_LED, HIGH);
+        displayMessage("Sent: Go");
         delay(1000); // Debounce delay
       } else if (forceOpenButtonState == LOW) {
         sendMessage("Force Fairing Open");
-        digitalWrite(B_LED, LOW);
-        delay(500);
-        digitalWrite(B_LED, HIGH);
-        delay(500);
-        digitalWrite(B_LED, LOW);
-        delay(500);
-        digitalWrite(B_LED, HIGH);
+        displayMessage("Sent: Force Fairing Open");
         delay(1000); // Debounce delay
       } else if (beginDescentButtonState == LOW) {
         sendMessage("Begin Controlled Descent");
-        digitalWrite(G_LED, LOW);
-        delay(500);
-        digitalWrite(G_LED, HIGH);
-        delay(500);
-        digitalWrite(G_LED, LOW);
-        delay(500);
-        digitalWrite(G_LED, HIGH);
+        displayMessage("Sent: Begin Controlled Descent");
         delay(1000); // Debounce delay
       } else if (checkButtonState == LOW) {
         sendMessage("Check");
+        displayMessage("Sent: Check");
         delay(1000);
       }
-  } else {
-    // If activation button is not pressed, print the message
-    Serial.println("Activation button not pressed!");
-    delay(500);
   }
-  } else {
-  // If arm button is not pressed, print the message for any command button press
-  if (goButtonState == LOW || forceOpenButtonState == LOW || beginDescentButtonState == LOW) {
-    Serial.println("Activation button not pressed!");
+  else {
+    // If arm button is not pressed, print the message for any command button press
+    if (goButtonState == LOW || forceOpenButtonState == LOW || beginDescentButtonState == LOW || checkButtonState == LOW || abortButtonState == LOW) {
+      Serial.println("Activation button not pressed!");
+      displayMessage("Activation button not pressed!");
+    }
   }
-}
 }

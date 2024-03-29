@@ -7,6 +7,9 @@
 #include <RH_RF95.h>
 #include "Adafruit_BMP3XX.h"
 
+// ENTER CURRENT METAR ALTIMETER
+double inHg = 29.92; 
+
 #define RFM95_CS                8
 #define RFM95_INT               3
 #define RFM95_RST               4
@@ -25,69 +28,29 @@ int R_LED = 5;
 int G_LED = 6;
 int B_LED = 9;
 
-// Define times and duration here
-int times = 3;
-int duration = 500;
-
 //This is for the BMP390 barometer
 Adafruit_BMP3XX bmp;
-double inHg = 30.07; // enter current location altimiter value
 double hPa = inHg * 33.8639;
 #define SEALEVELPRESSURE_HPA (hPa) // default: 1013.25
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
-/************ LED Functions ***************/
+unsigned long previousMillis = 0;
+unsigned long currentMillis;
 
-void flashWhiteLED(int duration) {
-  digitalWrite(R_LED, LOW); // Turn on LED (white)
-  digitalWrite(G_LED, LOW);
-  digitalWrite(B_LED, LOW);
-  delay(duration);
-  digitalWrite(R_LED, HIGH); // Turn off LED
-  digitalWrite(G_LED, HIGH);
-  digitalWrite(B_LED, HIGH);
-  delay(duration);
-}
-
-void flashRedLED(int duration, unsigned long durationMillis) {
-  unsigned long startTime = millis(); // Get the start time
-  while (millis() - startTime < durationMillis) { // Repeat until the specified duration elapses
-    digitalWrite(R_LED, LOW); // Turn on the LED (red)
-    delay(duration);
-    digitalWrite(R_LED, HIGH); // Turn off the LED
-    delay(duration);
+void nonBlockingDelay(unsigned long interval) {
+  currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    // If the specified interval has passed, update previousMillis
+    previousMillis = currentMillis;
   }
 }
-
-void flashGreenLED(int duration, unsigned long durationMillis) {
-  for (int i = 0; i < times; i++) {
-    digitalWrite(G_LED, LOW); // Turn on LED (green)
-    delay(duration);
-    digitalWrite(G_LED, HIGH); // Turn off LED
-    delay(duration);
-  }
-}
-
-void solidWhiteLED(int times, int duration) {
-    digitalWrite(R_LED, LOW); // Turn on LED (white)
-    digitalWrite(G_LED, LOW);
-    digitalWrite(B_LED, LOW);
-    delay(duration);
-    digitalWrite(R_LED, HIGH); // Turn off LED
-    digitalWrite(G_LED, HIGH);
-    digitalWrite(B_LED, HIGH);
-    delay(duration);
-}
-
-/******** END OF LED FUNCTIONS **********/
 
 bool sendMessage(String message) {
   if (rf95.send((uint8_t *)message.c_str(), message.length())) {  // message.length()+1?
     rf95.waitPacketSent();
     Serial.println("Message sent successfully: " + message);
-    solidWhiteLED(times, duration);
     return true; // Message sent successfully
   } else {
     Serial.println("Message failed: " + message);
@@ -107,7 +70,6 @@ void awaitSignal(int flashDuration) {
       Serial.println("Timeout waiting for signal");
       return;
     }
-    flashWhiteLED(flashDuration); // Flash white LED while awaiting signal
     Serial.println("Awaiting signal from Huntsville...");
   }
   
@@ -127,7 +89,7 @@ void awaitSignal(int flashDuration) {
     if (strcmp((char*)buf, "Go") == 0) {
       Serial.println("Go signal received.");
       // Handle Go signal
-      sendMessage("Go signal received, firing at 400ft AGL.");
+      sendMessage("Go signal received, Fairing firing at 400ft AGL.");
       FireBelow400(); // Check altitude for pyro trigger
       
     } else if (strcmp((char*)buf, "Check") == 0) {        
@@ -139,7 +101,7 @@ void awaitSignal(int flashDuration) {
     } else if (strcmp((char*)buf, "Force Open") == 0) {
       Serial.println("Force Open signal received.");
       // Handle Force Open signal
-      sendMessage("Force Open received, releasing Fairing.");
+      sendMessage("Force Open received, Fairing releasing payload.");
       digitalWrite(13, HIGH);
       Serial.println("Force Open, pyro firing for 5s.");
       delay(5000);
@@ -170,7 +132,7 @@ void FireBelow400() {   // Need to be able to receive force-open signal
         // Activate pyro charge
         digitalWrite(13, HIGH);
         Serial.println("Below 400ft, Activating pyro wire.");
-        sendMessage("Fairing below 400ft, releasing payload.")
+        sendMessage("Fairing below 400ft, releasing payload.");
         delay(5000);
         digitalWrite(13, LOW);
         Serial.println("Pyro wire deactivated.");
@@ -213,7 +175,6 @@ void setup() {
   digitalWrite(PYRO, HIGH);
   Serial.println("PYRO is on!");
 
-  flashRedLED(200, 5000); // Flash the red LED for specified duration and time
   digitalWrite(PYRO, LOW); // Set pyro pin low
   Serial.println("Pyro is off");
   delay(5000); // Wait for 5 seconds
@@ -233,7 +194,6 @@ void setup() {
   delay(3000);
   if (!bmp.begin_I2C()) {
     Serial.println("Could not find the BMP390 sensor :( Check your soldering and inspect for bad connections");
-    flashRedLED(times, duration);
     delay(3000);
     Serial.println();
     Serial.println("Proceeding with startup");
@@ -248,7 +208,6 @@ void setup() {
     bmp.setOutputDataRate(BMP3_ODR_50_HZ);
      
     Serial.println("Found the BMP390 sensor! Here's some data...");
-    flashGreenLED(times, duration);
     
     for (int i = 0; i <= 10; i++) 
     {
@@ -284,28 +243,24 @@ void setup() {
   delay(1000);
   while (!rf95.init()) {
     Serial.println("LoRa radio init failed");
-    flashRedLED(times, duration);
     Serial.println("Uncomment '#define SERIAL_DEBUG' in RH_RF95.cpp for detailed debug info");
     while (1);
   }
   Serial.println("LoRa radio init OK!");
-  flashGreenLED(times, duration);
   
   if (!rf95.setFrequency(RF95_FREQ)) {
     Serial.println("setFrequency failed");
-    flashRedLED(times, duration);
     while (1);
   }
   Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
 
   Serial.println("Fairing setup complete");
-  flashGreenLED(times, duration);
   sendMessage("This is Fairing");
 }
 
 void loop() {
 
   awaitSignal(2000);
-  delay(300); // need???
+  delay(200); // need???
 
 }
