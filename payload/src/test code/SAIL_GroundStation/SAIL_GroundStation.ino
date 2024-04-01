@@ -10,7 +10,7 @@ const int BUTTON_FORCE_OPEN_PIN = 11;  // Pin for "Force Fairing Open" button
 const int BUTTON_BEGIN_DESCENT_PIN = 9;  // Pin for "Begin Controlled Descent" button
 const int ARM_BUTTON_PIN    = 6;   // Pin for the button to activate states
 const int CHECK_PIN         = 12;
-const int ABORT_PIN
+const int ABORT_PIN = 5;
 
 #define RF95_FREQ 915.0
 

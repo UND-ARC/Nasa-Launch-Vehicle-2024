@@ -7,7 +7,6 @@
 #include <Wire.h>
 #include <SD.h>
 #include <SPI.h>
-#include <SdFat.h>
 #include <Adafruit_SPIFlash.h>
 #include <Adafruit_BNO055.h>
 #include <Adafruit_Sensor.h>
@@ -16,6 +15,9 @@
 #include "Adafruit_BMP3XX.h"
 #include <RH_RF95.h>
 #include <Servo.h>
+
+#define SEALEVELPRESSURE_INHG 29.92   // Sea level pressure in inches of mercury, adjust as per your location
+#define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
 
 Servo esc1; // Create a servo object to control the ESC
 Servo esc2; // Create a servo object to control the ESC
@@ -64,13 +66,18 @@ Adafruit_SPIFlash flash(&flashTransport);
 //This is for the pyro channel
 int PYRO = 21;
 
-// This is for the RFM95 Radio
-#define RFM95_CS 10
-#define RFM95_RST 2
-//#define RFM95_INT 2
+#define RFM95_CS 2
+#define RFM95_RST 1
+#define RFM95_INT 17
+
 #define RF95_FREQ 915.0
-//RH_RF95 rf95(RFM95_CS, RFM95_INT);
-RH_RF95 rf95(RFM95_CS);
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+
+#define SIGNAL_TIMEOUT 5000 // Timeout value in milliseconds (2 seconds) NEW
+
+unsigned long lastAltitudeCheckTime = 0; // Variable to store the last time altitude was checked
+
+
 int16_t packetnum = 0;  // packet counter, we increment per xmission
 
 void goodTone() { 
@@ -89,25 +96,38 @@ void warningTone() {
   tone(Buzzer, 1000); delay(2000); noTone(Buzzer); delay(400);
 }
 
-void FailLED() {
-    digitalWrite(R_LED, LOW);
-    delay(1000);
-    digitalWrite(R_LED, HIGH);
-}
-
-void PassLED() {
-    digitalWrite(G_LED, LOW);
-    delay(1000);
-    digitalWrite(G_LED, HIGH);
-
 bool sendMessage(String message) {
-  if (rf95.send((uint8_t *)message.c_str(), message.length())) {
+  if (rf95.send((uint8_t *)message.c_str(), message.length())) {  // message.length()+1?
     rf95.waitPacketSent();
     Serial.println("Message sent successfully: " + message);
-    return true; // Message sent successfully 
+    return true; // Message sent successfully
   } else {
     Serial.println("Message failed: " + message);
     return false; // Message not sent due to activation state
+  }
+}
+
+void fireLandingLegs() {   // Need to be able to receive force-open signal
+  Serial.println("Firing landing legs at 350 ft AGL.");
+  while (true) {
+    if (millis() - lastAltitudeCheckTime >= 200) { // Check altitude every 200 milliseconds
+      lastAltitudeCheckTime = millis(); // Update lastAltitudeCheckTime
+
+      float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+      float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
+      Serial.print("Altitude: ");
+      Serial.print(altitudeAGL);
+      Serial.println(" ft AGL");
+
+      if (altitudeAGL < 350.0) {
+        digitalWrite(PYRO, HIGH);
+        Serial.println("Below 350ft, Releasing legs.");
+        delay(5000);
+        digitalWrite(PYRO, LOW);
+        Serial.println("Pyro wire deactivated.");
+        break; // Exit the loop once pyro wire is deactivated
+      }
+    }
   }
 }
 
@@ -237,19 +257,30 @@ void awaitSignal() {
       Serial.print("SAIL has received message: ");
       Serial.println((char*)buf);
       Serial.print("RSSI: ");
-      Serial.println(rf95.lastRssi(), DEC);
+      Serial.println(rf95.lastRssi(), DEC);  
       
-      // Check the received signal
-      if (strcmp((char*)buf, "Go") == 0) {
-        Serial.println("Go signal received.");
-        // Handle Go signal
-        sendMessage("Go signal received, firing at 400ft AGL");
-        FireBelow400; // Check altitude for pyro trigger
+    // Check the received signal
+    if (strcmp((char*)buf, "Go") == 0) {
+      Serial.println("Go signal received.");
+      // Handle Go signal
+      delay(1000);
+      sendMessage("Go signal received, firing at 400ft AGL");
+      fireLandingLegs; // Check altitude for pyro trigger
+      
          
-      } else if (strcmp((char*)buf, "Check") == 0) {        
-        Serial.println("Check signal received.");
-        // Handle Check signal
-        sendMessage("Fairing still reads you loud and clear, Huntsville")
+          } else if (strcmp((char*)buf, "Check") == 0) {        
+      Serial.println("Check signal received.");
+      // Handle Check signal
+      delay(500);
+      float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+      float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
+      Serial.print("Altitude: ");
+      Serial.print(altitudeAGL);
+      Serial.println(" ft AGL");
+      String message = "SAIL @ ";
+      message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
+      message += " ft AGL";
+      sendMessage(message);  
         
       }  else if (strcmp((char*)buf, "Force Open") == 0) {
         Serial.println("Force Open signal received.");
@@ -272,9 +303,7 @@ void awaitSignal() {
 }
 
 void setup() {
-  while(!Serial){
-    //wait for the serial port to be available, comment this out before running on battery power!!!!
-  }
+  delay(1000);
 
   esc1.attach(22); // Attach the ESC signal cable to pin 1
   esc2.attach(23);
@@ -310,12 +339,6 @@ void setup() {
     delay(1000);
   }
   else{
-    //Configure the barometer
- //   bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
-  //                Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
- //                 Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-   //               Adafruit_BMP280::FILTER_X16,      /* Filtering. */
-   //               Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
 
 // Set up oversampling and filter initialization for BMP390
   bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
@@ -511,40 +534,6 @@ void setup() {
   }
 
   /********** END OF SD CARD *********/
-
-   // Custom SPI chip
-   Serial.println("Looking for the SPI flash chip. Standby...");
-   if(flash.begin()) 
-   {
-     delay(500);
-    goodTone();
-    passLED();
-     Serial.println("Great, looks like there's one here!");
-     Serial.println("Here's some info about it...");
-     Serial.println();
-     Serial.print("JEDEC ID: 0x");
-     Serial.println(flash.getJEDECID(), HEX);
-     Serial.print("Flash size: ");
-     Serial.print(flash.size() / 1024);
-     Serial.println(" KB");
-     Serial.println();
-     delay(1000);        
-   }
-   else{
-      delay(500);
-      Serial.println();
-      Serial.println("Hmmm, looks like there's no flash chip here. Try checking the following:");
-      Serial.println(" - Is the chip soldered on in the correct orientation?");
-      Serial.println(" - Is the correct chip select pin defined?");
-      badTone();
-      delay(2000);
-      Serial.println();
-      Serial.println("Proceding with the rest of the startup process");
-      delay(1000);
-      Serial.println();
-  }
-
-  /***** END OF FLASH TEST *******/
   
   /******* Now we'll test the radio ********/
   Serial.println("Now we'll check the radio module!");

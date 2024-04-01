@@ -3,8 +3,8 @@
 // Longer messages not tested
 // 4S LiPo connected to MOSFET. 9V doesn't discharged enough
 
-#define SEALEVELPRESSURE_INHG 29.96   // Sea level pressure in inches of mercury, adjust as per your location
-#define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
+#define SEALEVELPRESSURE_INHG 30.01   // Sea level pressure in inches of mercury, adjust as per your location
+#define GROUND_LEVEL_ELEVATION_FEET 889 // Ground level elevation in feet, adjust as per your location
 
 #include <SPI.h>
 #include <RH_RF95.h>
@@ -21,7 +21,7 @@
 unsigned long lastAltitudeCheckTime = 0; // Variable to store the last time altitude was checked
 
 //This is for the pyro channel
-int PYRO = 10;
+const int PYRO = 10;
 
 //Set up the LEDs
 int R_LED = 5;
@@ -47,7 +47,7 @@ bool sendMessage(String message) {
 }
 
 void fireBelow400() {   // Need to be able to receive force-open signal
-  Serial.println("Go signal received: Waiting for altitude to drop below 400ft...");
+  Serial.println("Fairing Go: Waiting <400ft");
   while (true) {
     if (millis() - lastAltitudeCheckTime >= 200) { // Check altitude every 200 milliseconds
       lastAltitudeCheckTime = millis(); // Update lastAltitudeCheckTime
@@ -59,10 +59,10 @@ void fireBelow400() {   // Need to be able to receive force-open signal
       Serial.println(" ft AGL");
 
       if (altitudeAGL < 400.0) {
-        digitalWrite(13, HIGH);
+        digitalWrite(PYRO, HIGH);
         Serial.println("Below 400ft, Activating pyro wire.");
         delay(5000);
-        digitalWrite(13, LOW);
+        digitalWrite(PYRO, LOW);
         Serial.println("Pyro wire deactivated.");
         break; // Exit the loop once pyro wire is deactivated
       }
@@ -73,7 +73,7 @@ void fireBelow400() {   // Need to be able to receive force-open signal
 void setup() {
 
   Serial.begin(9600);
-  delay(5000);
+  delay(3000);
   
   //set system led pins as outputs
   pinMode(R_LED, OUTPUT);
@@ -88,40 +88,22 @@ void setup() {
   Serial.println("Fairing Controller Startup!");
   delay(2000);
   
-  /********** PYRO TEST *****************/
-  Serial.println();
-  Serial.println("Let's test the pyro channel if it's not commented out");
-  Serial.println();
   pinMode(PYRO, OUTPUT);
-  digitalWrite(PYRO, LOW);
-  delay(2000);
   
- //////////////////////////////////////////////////////////////////////////////////////////
-  //The following code MUST BE REMOVED before you connect anything to the pyro channels
-  Serial.println("We'll now cycle through each channel, turning each one on for 2 seconds");
-  delay(2000);
-  digitalWrite(PYRO, HIGH);
-  Serial.println("Pyro is on!");
-  delay(5000); // Wait for 5 seconds
-
-  digitalWrite(PYRO, LOW); // Set pyro pin low
-  Serial.println("Pyro is off");
-  ////////////////////////////////////////////////////////////////////////////////////////
-          
   Serial.println();
   Serial.println("Done with the pyro channel testing");
   Serial.println();
   Serial.println();
-  delay(1000);
+  delay(1000); 
 
  /********** END OF PYRO TEST *****************/
 
   // Barometer Check
   Serial.println("Let's see if the BMP390 Barometer is connected. Standby...");
-  delay(3000);
+  delay(1000);
   if (!bmp.begin_I2C()) {
     Serial.println("Could not find the BMP390 sensor :( Check your soldering and inspect for bad connections");
-    delay(3000);
+    delay(2000);
     Serial.println();
     Serial.println("Proceeding with startup");
     Serial.println();
@@ -190,7 +172,7 @@ void setup() {
   Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
 
   Serial.println("Fairing setup complete");
-  sendMessage("This is Fairing");
+  sendMessage("Fairing rdy to go");
 }
 
 void loop() {
@@ -233,22 +215,34 @@ void loop() {
     } else if (strcmp((char*)buf, "Check") == 0) {        
       Serial.println("Check signal received.");
       // Handle Check signal
-      delay(500);
-      sendMessage("Fairing checking in.");
+      delay(1000);
+      float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+      float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
+      Serial.print("Altitude: ");
+      Serial.print(altitudeAGL);
+      Serial.println(" ft AGL");
+      String message = "Fairing @ ";
+      message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
+      message += " ft AGL";
+      sendMessage(message);  
       
-    } else if (strcmp((char*)buf, "Force Open") == 0) {
+    }  else if (strcmp((char*)buf, "Force Open") == 0) {
       Serial.println("Force Open signal received.");
-      // Handle Force Open signal
-      delay(500);
-      sendMessage("Force Open received, releasing Fairing.");
       Serial.println("Force Open, pyro firing for 5s.");
+      delay(500);
+      sendMessage("Force Open recieved.");
+      digitalWrite(PYRO, HIGH);
+      delay(5000);
+      digitalWrite(PYRO, LOW);
+      Serial.println("Pyro wire deactivated.");
+      
       delay(5000);
       Serial.println("End of Force Open, pyro off.");     
       
     } else if (strcmp((char*)buf, "Hello Fairing.") == 0) {
       // Reply back "And hello to you, Huntsville"
       delay(500);
-      sendMessage("And hello to you, Huntsville. This is Fairing awaiting your signal.");
+      sendMessage("Fairing awaiting signal.");
     }
   }
 }
