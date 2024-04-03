@@ -1,3 +1,6 @@
+// May add "S: " "F: " incoming messages to dedicated row.
+// ADD sd card logging?
+
 #include <SPI.h>
 #include <RH_RF95.h>
 #include <Adafruit_SSD1306.h> // Include the SSD1306 library
@@ -18,6 +21,8 @@ const int BUTTON_FORCE_OPEN_PIN = 11;  // Pin for "Force Fairing Open" button
 const int BUTTON_BEGIN_DESCENT_PIN = 9;  // Pin for "Begin Controlled Descent" button
 const int CHECK_PIN         = 12;
 const int LEG_PIN = 5;
+
+unsigned long startTime = 0; // Variable to store the start time
 
 #define RF95_FREQ 915.0
 
@@ -66,6 +71,8 @@ void displayMessage(int row, const char* message) {
 
 void setup() {
 
+  startTime = millis(); // Record the start time
+
   // Initialize OLED display
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Address 0x3C for 128x64
   display.clearDisplay(); // Clear the display
@@ -78,7 +85,7 @@ void setup() {
   pinMode(BUTTON_BEGIN_DESCENT_PIN, INPUT);
   pinMode(ARM_BUTTON_PIN, INPUT);
   pinMode(CHECK_PIN, INPUT);
-  pinMode(LEG_PIN, INPUT);h  
+  pinMode(LEG_PIN, INPUT);  
 
   Serial.begin(9600);
   delay(1000);
@@ -121,8 +128,8 @@ void setup() {
     if (rf95.recv(buf, &len)) {
       Serial.print("Got reply: ");
       Serial.println((char*)buf);
-      displayMessage(0, "Got reply:");
-      displayMessage(0, (char*)buf);
+      displayMessage(1, "Got reply:");
+      displayMessage(1, (char*)buf);
       Serial.print("RSSI: ");
       Serial.println(rf95.lastRssi(), DEC);
     } else {
@@ -157,6 +164,37 @@ void setup() {
 }
 
 void loop() {
+  // Calculate elapsed time
+  unsigned long elapsedTime = millis() - startTime;
+
+  // Convert elapsed time to hours, minutes, and seconds
+  unsigned long hours = elapsedTime / 3600000;
+  unsigned long minutes = (elapsedTime % 3600000) / 60000;
+  unsigned long seconds = (elapsedTime % 60000) / 1000;
+
+  // Display elapsed time on the first row
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  // Print hours
+  if (hours < 10) {
+    display.print("0");
+  }
+  display.print(hours);
+  display.print(":");
+  // Print minutes
+  if (minutes < 10) {
+    display.print("0");
+  }
+  display.print(minutes);
+  display.print(":");
+  // Print seconds
+  if (seconds < 10) {
+    display.print("0");
+  }
+  display.print(seconds);
+  display.display();
   
   int armButtonState = digitalRead(ARM_BUTTON_PIN);
   int goButtonState = digitalRead(BUTTON_GO_PIN);
@@ -195,32 +233,32 @@ void loop() {
   if (activationState) {
     if (armButtonState == LOW) {
       Serial.println("ARM button pressed!");
-      displayMessage(0, "ARM button pressed!");
+      displayMessage(1, "ARM button pressed!");
       if (goButtonState == LOW) {
         sendMessage("Go");
-        displayMessage(1, "Sent: GO!");
+        displayMessage(2, "Sent: GO!");
       } else if (forceOpenButtonState == LOW) {
         sendMessage("Force Open");
-        displayMessage(1, "Sent: Fairing Force Open");
+        displayMessage(2, "Sent: Fairing Force Open");
       } else if (beginDescentButtonState == LOW) {
         sendMessage("Begin Controlled Descent");
-        displayMessage(1, "Sent: Controlled Descent");
+        displayMessage(2, "Sent: Cont. Descent");
       } else if (checkButtonState == LOW) {
         sendMessage("Check");
-        displayMessage(1, "Sent: Range Check");
+        displayMessage(2, "Sent: Range Check");
       } else if (legButtonState == LOW) {
         sendMessage("Legs open");
-        displayMessage(1, "Sent: Legs open");
+        displayMessage(2, "Sent: Legs open");
       }
     } else {
       Serial.println("Activation button not pressed!");
-      displayMessage(0,"Activation button not pressed!");
+      displayMessage(1,"Activation button not pressed!");
     }
   } else {
     if (goButtonState == LOW || forceOpenButtonState == LOW || beginDescentButtonState == LOW || checkButtonState == LOW || legButtonState == LOW) {
       Serial.println("Activation button not pressed!");
-      displayMessage(0,"Activation button not pressed!");
-      displayMessage(1,"Message not sent");
+      displayMessage(1,"Activation button not pressed!");
+      displayMessage(2,"Message not sent");
       delay(200);
     }
   }

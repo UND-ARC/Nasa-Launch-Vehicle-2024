@@ -1,8 +1,7 @@
 // Data logging not added (low priority)
-// ADD FIREBELOW400 BEFORE SENDING FEEDBACK TO GUARANTEE?
+// Require message from Ground Station to proceed? Currently starts regardless
 // Longer messages not tested
-// 4S LiPo connected to MOSFET
-// Add SD logging?
+// 4S LiPo connected to MOSFET. 9V doesn't discharged enough
 
 #define SEALEVELPRESSURE_INHG 30.01   // Sea level pressure in inches of mercury, adjust as per your location
 #define GROUND_LEVEL_ELEVATION_FEET 889 // Ground level elevation in feet, adjust as per your location
@@ -191,6 +190,7 @@ void loop() {
       Serial.println("Timeout waiting for signal from Huntsville");
       return;
     }
+    //Serial.println("Awaiting signal from Huntsville...");
   }
   
   // Signal received
@@ -210,7 +210,7 @@ void loop() {
     if (strcmp((char*)buf, "Go") == 0) {
       Serial.println("Go signal received.");
       // Handle Go signal
-      delay(1000);
+      delay(500);
       sendMessage("Go signal received. Firing below 400 ft AGL.");
       fireBelow400();
       
