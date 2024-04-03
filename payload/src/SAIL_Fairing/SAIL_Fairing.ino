@@ -173,6 +173,8 @@ void setup() {
 
   Serial.println("Fairing setup complete");
   sendMessage("Fairing rdy to go");
+
+   rf95.setTxPower(23, false);
 }
 
 void loop() {
