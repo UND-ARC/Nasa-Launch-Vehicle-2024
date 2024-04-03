@@ -61,6 +61,7 @@ void fireBelow400() {   // Need to be able to receive force-open signal
 
       if (altitudeAGL < 400.0) {
         digitalWrite(PYRO, HIGH);
+        sendMessage("F: <400ft, open Fairing");
         Serial.println("Below 400ft, Activating pyro wire.");
         delay(5000);
         digitalWrite(PYRO, LOW);
@@ -173,7 +174,7 @@ void setup() {
   Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
 
   Serial.println("Fairing setup complete");
-  sendMessage("Fairing rdy to go");
+  sendMessage("F: Fairing rdy to go");
 
    rf95.setTxPower(23, false);
 }
@@ -209,21 +210,19 @@ void loop() {
     // Check the received signal
     if (strcmp((char*)buf, "Go") == 0) {
       Serial.println("Go signal received.");
-      // Handle Go signal
       delay(1000);
-      sendMessage("Go signal received. Firing below 400 ft AGL.");
+      sendMessage("F: Go recv. Firing <400ft AGL.");
       fireBelow400();
       
     } else if (strcmp((char*)buf, "Check") == 0) {        
       Serial.println("Check signal received.");
-      // Handle Check signal
       delay(1000);
       float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
       float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
       Serial.print("Altitude: ");
       Serial.print(altitudeAGL);
       Serial.println(" ft AGL");
-      String message = "Fairing @ ";
+      String message = "F: Fairing @ ";
       message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
       message += " ft AGL";
       sendMessage(message);  
@@ -232,7 +231,7 @@ void loop() {
       Serial.println("Force Open signal received.");
       Serial.println("Force Open, pyro firing for 5s.");
       delay(500);
-      sendMessage("Force Open recieved.");
+      sendMessage("F: Force Open recieved.");
       digitalWrite(PYRO, HIGH);
       delay(5000);
       digitalWrite(PYRO, LOW);
@@ -242,9 +241,8 @@ void loop() {
       Serial.println("End of Force Open, pyro off.");     
       
     } else if (strcmp((char*)buf, "Hello Fairing.") == 0) {
-      // Reply back "And hello to you, Huntsville"
       delay(500);
-      sendMessage("Fairing awaiting signal.");
+      sendMessage("F: Fairing awaiting signal.");
     }
   }
 }

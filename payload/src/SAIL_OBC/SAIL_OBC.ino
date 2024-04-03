@@ -107,7 +107,7 @@ void fireLandingLegs() {   // Need to be able to receive force-open signal
       if (altitudeAGL < 350.0) {
         digitalWrite(PYRO, HIGH);
         Serial.println("Below 350ft, Releasing legs.");
-        sendMessage("<350ft, releasing legs");
+        sendMessage("S: <350ft, releasing legs");
         delay(10000);
         digitalWrite(PYRO, LOW);
         Serial.println("Pyro wire deactivated.");
@@ -222,7 +222,9 @@ void setup() {
   digitalWrite(G_LED, HIGH);
   digitalWrite(B_LED, HIGH);
 
-    /* Now we'll test the radio */
+    pinMode(PYRO, OUTPUT);
+
+  /* Now we'll test the radio */
   Serial.println("Now we'll check the radio module!");
   delay(500);
   Serial.println("Arduino LoRa TX Test!");
@@ -299,30 +301,30 @@ void setup() {
   bmp.setOutputDataRate(BMP3_ODR_50_HZ);
 
      
-    Serial.println("Found the BMP390 sensor! Here's some data...");
-    goodTone();
+  Serial.println("Found the BMP390 sensor! Here's some data...");
+  goodTone();
 
-    for (int i = 0; i <= 10; i++) 
-    {
-      Serial.println();
-      float temperatureF = bmp.temperature * 1.8 + 32; // Convert Celsius to Fahrenheit
-      Serial.print(F("Temperature = "));
-      Serial.print(temperatureF);
-      Serial.println(" °F");
+  for (int i = 0; i <= 10; i++) 
+  {
+    Serial.println();
+    float temperatureF = bmp.temperature * 1.8 + 32; // Convert Celsius to Fahrenheit
+    Serial.print(F("Temperature = "));
+    Serial.print(temperatureF);
+    Serial.println(" °F");
 
-      Serial.print("Current Altimeter Rating = ");
-      Serial.print(SEALEVELPRESSURE_INHG);
-      Serial.println(" inHg");
+    Serial.print("Current Altimeter Rating = ");
+    Serial.print(SEALEVELPRESSURE_INHG);
+    Serial.println(" inHg");
 
-      float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); 
-      Serial.print("Approx. Altitude (MSL) = ");
-      Serial.print(altitudeMSL);
-      Serial.println(" ft");
+    float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); 
+    Serial.print("Approx. Altitude (MSL) = ");
+    Serial.print(altitudeMSL);
+    Serial.println(" ft");
 
-      float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET;
-      Serial.print("Approx. Altitude (AGL) = ");
-      Serial.print(altitudeAGL);
-      Serial.println(" ft");
+    float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET;
+    Serial.print("Approx. Altitude (AGL) = ");
+    Serial.print(altitudeAGL);
+    Serial.println(" ft");
     delay(200);
   }
 }
@@ -403,7 +405,7 @@ void setup() {
     }
   }
 
-    /* END OF IMU */
+  /* END OF IMU */
     
 
   /* SD CARD */
@@ -416,8 +418,6 @@ void setup() {
     Serial.println("* is your soldering correct?");
     Serial.println("* is the chipselect pin correct?");
     badTone();
-    Serial.println();
-    delay(2000);
     Serial.println();
     Serial.println("We'll continue with the startup without the SD card now :(");
     Serial.println();
@@ -481,7 +481,6 @@ void setup() {
   Serial.println();
   Serial.println("To finish up here, let's test the pyro channel");
   Serial.println();
-  pinMode(PYRO, OUTPUT);
   digitalWrite(PYRO, LOW);
   delay(1000);
 /*
@@ -574,7 +573,7 @@ void setup() {
   if (GPS.LOCUS_StartLogger())
     Serial.println(" STARTED!");
   else
-    Serial.println(" no response :(");
+    Serial.println(" no response for logging :(");
 
   /* ESC ARMING SEQUENCE */
   Serial.println("Time to arm the ESCs");
@@ -588,7 +587,7 @@ void setup() {
   /* END OF ARMING SEQUENCE */
   
   Serial.println("SAIL Diagnostics Complete!");
-  sendMessage("SAIL rdy to go");
+  sendMessage("S: SAIL rdy to go");
   delay(500);
   tone(Buzzer, 2000); delay(50); noTone(Buzzer); delay(75);
   tone(Buzzer, 2000); delay(50); noTone(Buzzer); delay(200);
@@ -656,28 +655,28 @@ void loop() {
     // Handle Go signal
     delay(1000);
     Serial.println("Firing landing legs at 350 ft AGL.");
-    sendMessage("SAIL is GO, legs at 350 ft");
+    sendMessage("S: SAIL is GO, legs at 350 ft");
     fireLandingLegs(); // Check altitude for pyro trigger
     float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
     float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation  
 
-      if (altitudeAGL < 350) {
-      // Start reporting AGL altitude every 0.5 seconds
-      unsigned long lastAltitudeReportTime = millis();
-      while (true) {
-        if (millis() - lastAltitudeReportTime >= 500) {
-          lastAltitudeReportTime = millis();
-          float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
-          float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
-          Serial.print("Altitude: ");
-          Serial.print(altitudeAGL);
-          Serial.println(" ft AGL");
-          String message = "SAIL AGL: ";
-          message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
-          sendMessage(message);
-        }
+    if (altitudeAGL < 350) {
+    // Start reporting AGL altitude every 0.5 seconds
+    unsigned long lastAltitudeReportTime = millis();
+    while (true) {
+      if (millis() - lastAltitudeReportTime >= 500) {
+        lastAltitudeReportTime = millis();
+        float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+        float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
+        Serial.print("Altitude: ");
+        Serial.print(altitudeAGL);
+        Serial.println(" ft AGL");
+        String message = "SAIL AGL: ";
+        message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
+        sendMessage(message);
       }
-      }
+    }
+  }
 
     } else if (strcmp((char*)buf, "Check") == 0) {        
     Serial.println("Check signal received.");
@@ -688,7 +687,7 @@ void loop() {
     Serial.print("Altitude: ");
     Serial.print(altitudeAGL);
     Serial.println(" ft AGL");
-    String message = "SAIL @ ";
+    String message = "S: SAIL @ ";
     message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
     message += " ft AGL";
     sendMessage(message);  
@@ -696,7 +695,7 @@ void loop() {
     } else if (strcmp((char*)buf, "Legs open") == 0) {
       Serial.println("Open Legs signal received.");
       delay(1000);
-      sendMessage("Open Legs recv");
+      sendMessage("S: Open Legs recv");
       digitalWrite(PYRO, HIGH);
       Serial.println("Force Open, pyro firing.");
       delay(10000);
@@ -704,7 +703,7 @@ void loop() {
       Serial.println("End of Force Open, pyro off.");   
               
     } else if (strcmp((char*)buf, "Hello SAIL") == 0) {
-      sendMessage("SAIL awaiting signal");
+      sendMessage("S: SAIL awaiting signal");
     }
   } else {
     Serial.println("Receive failed");
