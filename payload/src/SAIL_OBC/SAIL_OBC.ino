@@ -50,6 +50,16 @@ SdVolume volume;
 SdFile root;
 const int SDchipSelect = 5;
 
+File imuLogFile;
+unsigned long lastLogTime = 0;
+const unsigned long logInterval = 500; // Logging interval in milliseconds
+unsigned long liftoffStartTime = 0;
+bool liftoffDetected = false;
+bool boostConfirmed = false;
+const float liftoffAccelerationThreshold = 15; // Acceleration threshold for liftoff detection in m/s^2
+const float boostAccelerationThreshold = 15;   // Acceleration threshold for boost confirmation in m/s^2
+
+
 //This is for the pyro channel
 int PYRO = 21;
 
@@ -474,6 +484,17 @@ void setup() {
   delay(1000);
   }
 
+
+  // Create a file for logging
+  imuLogFile = SD.open("IMU_Log.txt", FILE_WRITE);
+  if (!imuLogFile) {
+    Serial.println("Error opening IMU log file!");
+    return;
+  }
+
+    // Write headers to the log file
+  imuLogFile.println("Timestamp,Z Accel (m/s^2),Rotation Rate (rad/s),Z Velocity (m/s)");
+
   /********** END OF SD CARD *********/
   
 
@@ -618,11 +639,21 @@ void setup() {
 
 void loop() {
 
+  float latitude = GPS.latitudeDegrees;
+  float longitude = GPS.longitudeDegrees;
+
   if (GPSSerial.available()) {
   char c = GPSSerial.read();
   Serial.write(c);
   }
+ 
+ // Read IMU data
+  float zAccel = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER).z();
+  float rotationRate = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE).z();
+  float zVelocity = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL).z();
 
+  // Get current timestamp
+  unsigned long currentMillis = millis();
   unsigned long signalStartTime = millis(); // Store the start time of waiting for signal
   
   // Flush the receive buffer to discard any previous messages
@@ -690,12 +721,18 @@ void loop() {
     String message = "S: SAIL @ ";
     message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
     message += " ft AGL";
+    /*
+    message += " | Lat: ";
+    message += String(latitude, 6); // Convert latitude to string with 6 decimal points precision
+    message += " | Long: ";
+    message += String(longitude, 6); // Convert longitude to string with 6 decimal points precision
+    */
     sendMessage(message);  
       
     } else if (strcmp((char*)buf, "Legs open") == 0) {
       Serial.println("Open Legs signal received.");
       delay(1000);
-      sendMessage("S: Open Legs recv");
+      sendMessage("S: Releasing legs");
       digitalWrite(PYRO, HIGH);
       Serial.println("Force Open, pyro firing.");
       delay(10000);
@@ -707,5 +744,38 @@ void loop() {
     }
   } else {
     Serial.println("Receive failed");
+  }
+
+   // Check for liftoff
+  float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+  float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
+  if (!liftoffDetected && zAccel >= liftoffAccelerationThreshold) {
+    liftoffDetected = true;
+    liftoffStartTime = currentMillis;
+    Serial.println("Acceleration detected! Waiting for boost confirmation...");
+  }
+
+    // Check for boost confirmation
+  if (liftoffDetected && zAccel >= boostAccelerationThreshold && altitudeAGL >= 20) {
+    boostConfirmed = true;
+    Serial.println("Boost stage confirmed! Logging started.");
+  }
+
+   // Check if it's time to log data
+  if (boostConfirmed && currentMillis - lastLogTime >= logInterval) {
+    // Write timestamp and IMU data to the log file
+    imuLogFile.print(currentMillis);
+    imuLogFile.print(",");
+    imuLogFile.print(zAccel);
+    imuLogFile.print(",");
+    imuLogFile.print(rotationRate);
+    imuLogFile.print(",");
+    imuLogFile.println(zVelocity);
+
+    // Flush data to the SD card
+    imuLogFile.flush();
+
+    // Update last log time
+    lastLogTime = currentMillis;
   }
 }
