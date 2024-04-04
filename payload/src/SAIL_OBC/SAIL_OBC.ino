@@ -16,19 +16,34 @@
 #include <Servo.h>
 #include "Adafruit_BMP3XX.h"
 #include <RH_RF95.h>
-#include <Servo.h>
 #include <Adafruit_GPS.h>
 
+// Constants
 #define SEALEVELPRESSURE_INHG 29.92   // Sea level pressure in inches of mercury, adjust as per your location
 #define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
+#define SIGNAL_TIMEOUT 5000 // Timeout value in milliseconds (2 seconds) NEW
+#define RF95_FREQ 915.0
 
 #define GPSSerial Serial1 // name of hw serial port
-Adafruit_GPS GPS(&GPSSerial);
+
 #define GPSECHO  true // Set to 'true' if you want to debug and listen to the raw GPS sentences
 uint32_t timer = millis();
 
-Servo esc1; // Create a servo object to control the ESC
-Servo esc2; // Create a servo object to control the ESC
+#define RFM95_CS 2
+#define RFM95_RST 1
+#define RFM95_INT 17
+
+// Global variables
+Adafruit_GPS GPS(&GPSSerial);
+Servo esc1;
+Servo esc2; 
+Adafruit_BMP3XX bmp;
+Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, &Wire); // by default address is 0x29 or 0x28
+Sd2Card card;
+SdVolume volume;
+SdFile root;
+File imuLogFile;
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
 //First, we'll set up the LEDs and buzzer
 int R_LED = 9;
@@ -36,21 +51,10 @@ int G_LED = 3;
 int B_LED = 6;
 int Buzzer = 4;
 
-//This is for the BMP390 barometer
-Adafruit_BMP3XX bmp;
-
-// For the BNO055 IMU, Check I2C device address and correct line below (by default address is 0x29 or 0x28)
-//                                   id, address
-Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, &Wire);
 #define BNO055_SAMPLERATE_DELAY_MS (100)
 
-//This is for the SD card
-Sd2Card card;
-SdVolume volume;
-SdFile root;
 const int SDchipSelect = 5;
 
-File imuLogFile;
 unsigned long lastLogTime = 0;
 const unsigned long logInterval = 500; // Logging interval in milliseconds
 unsigned long liftoffStartTime = 0;
@@ -59,18 +63,7 @@ bool boostConfirmed = false;
 const float liftoffAccelerationThreshold = 15; // Acceleration threshold for liftoff detection in m/s^2
 const float boostAccelerationThreshold = 15;   // Acceleration threshold for boost confirmation in m/s^2
 
-
-//This is for the pyro channel
 int PYRO = 21;
-
-#define RFM95_CS 2
-#define RFM95_RST 1
-#define RFM95_INT 17
-
-#define RF95_FREQ 915.0
-RH_RF95 rf95(RFM95_CS, RFM95_INT);
-
-#define SIGNAL_TIMEOUT 5000 // Timeout value in milliseconds (2 seconds) NEW
 
 unsigned long lastAltitudeCheckTime = 0; // Variable to store the last time altitude was checked
 unsigned long timeoutDuration = 5000; // Timeout duration in milliseconds
@@ -118,7 +111,7 @@ void fireLandingLegs() {   // Need to be able to receive force-open signal
         digitalWrite(PYRO, HIGH);
         Serial.println("Below 350ft, Releasing legs.");
         sendMessage("S: <350ft, releasing legs");
-        delay(10000);
+        delay(5000);
         digitalWrite(PYRO, LOW);
         Serial.println("Pyro wire deactivated.");
         break; // Exit the loop once pyro wire is deactivated
@@ -211,11 +204,11 @@ void setup() {
 
   Serial.begin(9600);
 
-  esc1.attach(22); // Attach the ESC signal cable to pin 1
+  esc1.attach(22);
   esc2.attach(23);
   
   Serial.println();Serial.println();
-  Serial.println("Hey! I'm the SAIL flight computer! Let's get started.");
+  Serial.println("SAIL OBC Startup!");
   goodTone();
   delay(200);
   badTone();
@@ -232,7 +225,7 @@ void setup() {
   digitalWrite(G_LED, HIGH);
   digitalWrite(B_LED, HIGH);
 
-    pinMode(PYRO, OUTPUT);
+  pinMode(PYRO, OUTPUT);
 
   /* Now we'll test the radio */
   Serial.println("Now we'll check the radio module!");
@@ -519,8 +512,6 @@ void setup() {
   
   Serial.println();
   Serial.println("Done with the pyro channel testing");
-  Serial.println();
-  Serial.println();
   delay(1000);
 
   /* END OF PYRO TEST */
@@ -641,6 +632,8 @@ void loop() {
 
   float latitude = GPS.latitudeDegrees;
   float longitude = GPS.longitudeDegrees;
+  float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
+  float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation 
 
   if (GPSSerial.available()) {
   char c = GPSSerial.read();
@@ -686,10 +679,8 @@ void loop() {
     // Handle Go signal
     delay(1000);
     Serial.println("Firing landing legs at 350 ft AGL.");
-    sendMessage("S: SAIL is GO, legs at 350 ft");
+    sendMessage("S: SAIL is GO, wait for 350 ft");
     fireLandingLegs(); // Check altitude for pyro trigger
-    float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
-    float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation  
 
     if (altitudeAGL < 350) {
     // Start reporting AGL altitude every 0.5 seconds
@@ -697,12 +688,10 @@ void loop() {
     while (true) {
       if (millis() - lastAltitudeReportTime >= 500) {
         lastAltitudeReportTime = millis();
-        float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
-        float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
         Serial.print("Altitude: ");
         Serial.print(altitudeAGL);
         Serial.println(" ft AGL");
-        String message = "SAIL AGL: ";
+        String message = "S: SAIL AGL: ";
         message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
         sendMessage(message);
       }
@@ -712,7 +701,7 @@ void loop() {
     } else if (strcmp((char*)buf, "Check") == 0) {        
     Serial.println("Check signal received.");
     // Handle Check signal
-    delay(100);
+    delay(1000);
     float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
     float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
     Serial.print("Altitude: ");
@@ -747,8 +736,6 @@ void loop() {
   }
 
    // Check for liftoff
-  float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
-  float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
   if (!liftoffDetected && zAccel >= liftoffAccelerationThreshold) {
     liftoffDetected = true;
     liftoffStartTime = currentMillis;
