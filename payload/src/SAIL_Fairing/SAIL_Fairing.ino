@@ -1,11 +1,11 @@
 // Data logging not added (low priority)
-// ADD FIREBELOW400 BEFORE SENDING FEEDBACK TO GUARANTEE?
+// Add RSSI to check message?
 // Longer messages not tested
-// 4S LiPo connected to MOSFET
+// 4S LiPo connected to MOSFET and MCU
 // Add SD logging?
 
-#define SEALEVELPRESSURE_INHG 30.01   // Sea level pressure in inches of mercury, adjust as per your location
-#define GROUND_LEVEL_ELEVATION_FEET 889 // Ground level elevation in feet, adjust as per your location
+#define SEALEVELPRESSURE_INHG 30.13   // Sea level pressure in inches of mercury, adjust as per your location
+#define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
 
 #include <SPI.h>
 #include <RH_RF95.h>
@@ -32,7 +32,6 @@ int B_LED = 9;
 //This is for the BMP390 barometer
 Adafruit_BMP3XX bmp;
 
-
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
@@ -55,7 +54,7 @@ void fireBelow400() {   // Need to be able to receive force-open signal
 
       float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
       float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
-      Serial.print("Altitude: ");
+      Serial.print("Fairing Altitude: ");
       Serial.print(altitudeAGL);
       Serial.println(" ft AGL");
 
@@ -75,7 +74,7 @@ void fireBelow400() {   // Need to be able to receive force-open signal
 void setup() {
 
   Serial.begin(9600);
-  delay(3000);
+  delay(1000);
   
   //set system led pins as outputs
   pinMode(R_LED, OUTPUT);
@@ -128,17 +127,17 @@ void setup() {
       Serial.print(temperatureF);
       Serial.println(" °F");
 
-      Serial.print("Current Altimeter Rating = ");
+      Serial.print("Current Altimeter = ");
       Serial.print(SEALEVELPRESSURE_INHG);
       Serial.println(" inHg");
 
       float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
-      Serial.print("Approx. Altitude (MSL) = ");
+      Serial.print("Altitude (MSL) = ");
       Serial.print(altitudeMSL);
       Serial.println(" ft");
 
       float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation
-      Serial.print("Approx. Altitude (AGL) = ");
+      Serial.print("Altitude (AGL) = ");
       Serial.print(altitudeAGL);
       Serial.println(" ft");
 
@@ -204,8 +203,8 @@ void loop() {
     Serial.println((char*)buf);
     Serial.print("RSSI: ");
     Serial.println(rf95.lastRssi(), DEC);
-    Serial.print("Received message length: ");
-    Serial.println(len);
+    //Serial.print("Received message length: ");
+    //Serial.println(len);
     
     // Check the received signal
     if (strcmp((char*)buf, "Go") == 0) {
@@ -232,10 +231,7 @@ void loop() {
       digitalWrite(PYRO, HIGH);
       delay(5000);
       digitalWrite(PYRO, LOW);
-      Serial.println("Pyro wire deactivated.");
-      
-      delay(5000);
-      Serial.println("End of Force Open, pyro off.");     
+      Serial.println("End of Force Open, pyro deactivated.");     
       
     } else if (strcmp((char*)buf, "Hello Fairing.") == 0) {
       delay(500);
