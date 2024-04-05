@@ -1,4 +1,4 @@
-// ADD FIRELEGS BEFORE SENDING FEEDBACK TO GUARANTEE?
+// MAY NEED TO DISABLE ARMING CODE FOR RC TO MANUALLY CONTROL
 // COMMAND FOR GPS LOCATION ON COMMAND, LOGGING, AND LAT/LONG on Check
 
 
@@ -17,6 +17,7 @@
 #include "Adafruit_BMP3XX.h"
 #include <RH_RF95.h>
 #include <Adafruit_GPS.h>
+#include <pitches.h>
 
 // Constants
 #define SEALEVELPRESSURE_INHG 29.92   // Sea level pressure in inches of mercury, adjust as per your location
@@ -58,8 +59,10 @@ const int SDchipSelect = 5;
 unsigned long lastLogTime = 0;
 const unsigned long logInterval = 500; // Logging interval in milliseconds
 unsigned long liftoffStartTime = 0;
+unsigned long landingTime = 0;
 bool liftoffDetected = false;
 bool boostConfirmed = false;
+bool landed = false;
 const float liftoffAccelerationThreshold = 15; // Acceleration threshold for liftoff detection in m/s^2
 const float boostAccelerationThreshold = 15;   // Acceleration threshold for boost confirmation in m/s^2
 
@@ -69,20 +72,37 @@ unsigned long lastAltitudeCheckTime = 0; // Variable to store the last time alti
 unsigned long timeoutDuration = 5000; // Timeout duration in milliseconds
 unsigned long startTime;
 
-void goodTone() { 
-  tone(Buzzer, 988); delay(50); noTone(Buzzer); delay(200);
-  tone(Buzzer, 988); delay(50); noTone(Buzzer); delay(200);
-  tone(Buzzer, 2093); delay(100); noTone(Buzzer); delay(400);
+void goodTone() {
+  tone(Buzzer, 988); delay(150); noTone(Buzzer); delay(150);
+  tone(Buzzer, 1175); delay(150); noTone(Buzzer); delay(150);
+  tone(Buzzer, 1319); delay(150); noTone(Buzzer); delay(300);
 }
 
 void badTone() {
-  tone(Buzzer, 2093); delay(50); noTone(Buzzer); delay(200);
-  tone(Buzzer, 2093); delay(50); noTone(Buzzer); delay(200);
-  tone(Buzzer, 988); delay(100); noTone(Buzzer); delay(400);
+  tone(Buzzer, 1319); delay(150); noTone(Buzzer); delay(150);
+  tone(Buzzer, 1319); delay(150); noTone(Buzzer); delay(150);
+  tone(Buzzer, 988); delay(200); noTone(Buzzer); delay(400);
 }
 
 void warningTone() {
   tone(Buzzer, 1000); delay(2000); noTone(Buzzer); delay(400);
+}
+
+void startupMelody() {
+  int melody[] = {
+    NOTE_C5, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_G4, 0, NOTE_B4, NOTE_C5
+  };
+  int noteDurations[] = {
+    4, 8, 8, 4, 4, 4, 4, 4
+  };
+
+  for (int thisNote = 0; thisNote < 8; thisNote++) {
+    int noteDuration = 1000 / noteDurations[thisNote];
+    tone(Buzzer, melody[thisNote], noteDuration);
+    int pauseBetweenNotes = noteDuration * 1.30;
+    delay(pauseBetweenNotes);
+    noTone(Buzzer);
+  }
 }
 
 bool sendMessage(String message) {
@@ -209,9 +229,7 @@ void setup() {
   
   Serial.println();Serial.println();
   Serial.println("SAIL OBC Startup!");
-  goodTone();
-  delay(200);
-  badTone();
+  startupMelody();
   Serial.println();Serial.println();
   delay(1000);
   
@@ -743,7 +761,7 @@ void loop() {
   }
 
     // Check for boost confirmation
-  if (liftoffDetected && zAccel >= boostAccelerationThreshold && altitudeAGL >= 20) {
+  if (!boostConfirmed && liftoffDetected && zAccel >= boostAccelerationThreshold && altitudeAGL >= 20) {
     boostConfirmed = true;
     Serial.println("Boost stage confirmed! Logging started.");
   }
@@ -764,5 +782,23 @@ void loop() {
 
     // Update last log time
     lastLogTime = currentMillis;
+  }
+
+  if(!landed && boostConfirmed && altitudeAGL < 15) {
+    landed = true;
+    landingTime = millis();
+    sendMessage("S: SAIL has landed");
+    Serial.println("SAIL has landed. Reporting landing and will start pinging location.");
+  }
+
+  if(landed && millis() - landingTime >= 15000) {
+    String message = "S: Lat: ";
+    message += String(latitude, 6); // Convert latitude to string with 6 decimal points precision
+    message += " | Long: ";
+    message += String(longitude, 6); // Convert longitude to string with 6 decimal points precision
+    sendMessage(message);
+
+    // Reset timer for next ping
+    landingTime = millis();
   }
 }
