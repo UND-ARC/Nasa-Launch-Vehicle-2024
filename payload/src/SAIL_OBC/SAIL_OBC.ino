@@ -20,9 +20,9 @@
 #include <pitches.h>
 
 // Constants
-#define SEALEVELPRESSURE_INHG 29.92   // Sea level pressure in inches of mercury, adjust as per your location
+#define SEALEVELPRESSURE_INHG 30.13   // Sea level pressure in inches of mercury, adjust as per your location
 #define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
-#define SIGNAL_TIMEOUT 5000 // Timeout value in milliseconds (2 seconds) NEW
+#define SIGNAL_TIMEOUT 5000 // Radio timeout value in milliseconds
 #define RF95_FREQ 915.0
 
 #define GPSSerial Serial1 // name of hw serial port
@@ -290,7 +290,6 @@ void setup() {
   Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
   delay(1000);
   
-
   // Defaults after init are 434.0MHz, 13dBm, Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on
 
   // The default transmitter power is 13dBm, using PA_BOOST.
@@ -321,7 +320,6 @@ void setup() {
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
   bmp.setOutputDataRate(BMP3_ODR_50_HZ);
 
-     
   Serial.println("Found the BMP390 sensor! Here's some data...");
   goodTone();
 
@@ -356,13 +354,12 @@ void setup() {
     badTone();
   }
   Serial.println(bno.begin() ? "Found it! BNO055 connection successful." : "BNO055 connection failed :(");
-  goodTone();
-  delay(1000);
   Serial.println();
   delay(1000);
   if(bno.begin())
   {
     Serial.println("Here's a little bit of IMU data!");
+    goodTone();
     /* Display some basic information on this sensor */
     displaySensorDetails();
      /* Optional: Display current status */
@@ -427,7 +424,6 @@ void setup() {
   }
 
   /* END OF IMU */
-    
 
   /* SD CARD */
   delay(1000);
@@ -542,9 +538,8 @@ void setup() {
   GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
   GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
 
-      for (int i = 0; i <= 10; i++) 
+      for (int i = 0; i <= 3; i++) 
     {
-      {
   // read data from the GPS in the 'main loop'
   char c = GPS.read();
   // if you want to debug, this is a good time to do it!
@@ -595,7 +590,6 @@ void setup() {
     }
   }
 }
-}
 
   Serial.println("Adafruit GPS logging start test!");
   delay(1000);
@@ -605,7 +599,7 @@ void setup() {
   else
     Serial.println(" no response for logging :(");
 
-  /* ESC ARMING SEQUENCE */
+  /* ESC ARMING SEQUENCE */ /*
   Serial.println("Time to arm the ESCs");
   Serial.println("Sending lowest throttle for arming...");  
   esc1.writeMicroseconds(1000); // Adjust this value if needed; 2000us usually indicates maximum throttle
@@ -794,7 +788,7 @@ void loop() {
   if(landed && millis() - landingTime >= 15000) {
     String message = "S: Lat: ";
     message += String(latitude, 6); // Convert latitude to string with 6 decimal points precision
-    message += " | Long: ";
+    message += " Long: ";
     message += String(longitude, 6); // Convert longitude to string with 6 decimal points precision
     sendMessage(message);
 
