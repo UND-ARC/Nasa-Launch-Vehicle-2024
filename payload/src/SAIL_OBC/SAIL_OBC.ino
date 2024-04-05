@@ -26,8 +26,8 @@
 #define RF95_FREQ 915.0
 
 #define GPSSerial Serial2 // pins 7 and 8 on Teensy 4.0
-
-#define GPSECHO  true // Set to 'true' if you want to debug and listen to the raw GPS sentences
+Adafruit_GPS GPS(&GPSSerial); // Connect to the GPS on the hardware port
+#define GPSECHO  false // Set to 'true' if you want to debug and listen to the raw GPS sentences
 uint32_t timer = millis();
 
 #define RFM95_CS 2
@@ -35,7 +35,6 @@ uint32_t timer = millis();
 #define RFM95_INT 17
 
 // Global variables
-Adafruit_GPS GPS(&GPSSerial);
 Servo esc1;
 Servo esc2; 
 Adafruit_BMP3XX bmp;
@@ -65,6 +64,7 @@ bool boostConfirmed = false;
 bool landed = false;
 const float liftoffAccelerationThreshold = 15; // Acceleration threshold for liftoff detection in m/s^2
 const float boostAccelerationThreshold = 15;   // Acceleration threshold for boost confirmation in m/s^2
+int loopCount = 0;
 
 int PYRO = 21;
 
@@ -222,7 +222,12 @@ void displayCalStatus(void)
 void setup() {
   delay(1000);
 
-  Serial.begin(9600);
+  GPS.begin(9600);
+
+  Serial.begin(115200);
+  GPS.begin(9600);
+  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
+  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
 
   esc1.attach(22);
   esc2.attach(23);
@@ -244,6 +249,23 @@ void setup() {
   digitalWrite(B_LED, HIGH);
 
   pinMode(PYRO, OUTPUT);
+
+
+  /* GPS TEST */
+
+  Serial.println("GPS Parsing Test");
+  unsigned long gpsTestStartTime = millis();
+  // Run the loop for 5 seconds
+  while (millis() - gpsTestStartTime < 5000) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      GPSSerial.write(c);
+    }
+    if (GPSSerial.available()) {
+      char c = GPSSerial.read();
+      Serial.write(c);
+    }
+  }
 
   /* Now we'll test the radio */
   Serial.println("Now we'll check the radio module!");
@@ -323,8 +345,7 @@ void setup() {
   Serial.println("Found the BMP390 sensor! Here's some data...");
   goodTone();
 
-  for (int i = 0; i <= 10; i++) 
-  {
+  for (int i = 0; i <= 10; i++) {
     Serial.println();
     float temperatureF = bmp.temperature * 1.8 + 32; // Convert Celsius to Fahrenheit
     Serial.print(F("Temperature = "));
@@ -373,7 +394,7 @@ void setup() {
     Serial.print(temp);
     Serial.println(" C");
     Serial.println("");
-
+  
     Serial.println("Calibration status values: 0=uncalibrated, 3=fully calibrated");
     
     for (int i = 0; i <= 50; i++) 
@@ -387,7 +408,7 @@ void setup() {
       // - VECTOR_GRAVITY       - m/s^2
       imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
       
-      /* Display the floating point data */
+      // Display the floating point data 
       Serial.print("X: ");
       Serial.print(euler.x());
       Serial.print(" Y: ");
@@ -396,7 +417,7 @@ void setup() {
       Serial.print(euler.z());
       Serial.print("\t\t");
 
-      /* Display calibration status for each sensor. */
+      // Display calibration status for each sensor.
       uint8_t system, gyro, accel, mag = 0;
       bno.getCalibration(&system, &gyro, &accel, &mag);
       Serial.print("CALIBRATION: Sys=");
@@ -496,7 +517,7 @@ void setup() {
   imuLogFile = SD.open("IMU_Log.txt", FILE_WRITE);
   if (!imuLogFile) {
     Serial.println("Error opening IMU log file!");
-    return;
+   // return;
   }
 
     // Write headers to the log file
@@ -530,74 +551,6 @@ void setup() {
 
   /* END OF PYRO TEST */
 
-  /* GPS TEST */
-
-  Serial.println("GPS Parsing Test");
-  delay(1000);
-  GPS.begin(9600);
-  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
-  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
-
-      for (int i = 0; i <= 3; i++) 
-    {
-  // read data from the GPS in the 'main loop'
-  char c = GPS.read();
-  // if you want to debug, this is a good time to do it!
-  if (GPSECHO)
-    if (c) Serial.print(c);
-  // if a sentence is received, we can check the checksum, parse it...
-  if (GPS.newNMEAreceived()) {
-    // a tricky thing here is if we print the NMEA sentence, or data
-    // we end up not listening and catching other sentences!
-    // so be very wary if using OUTPUT_ALLDATA and trying to print out data
-    Serial.print(GPS.lastNMEA()); // this also sets the newNMEAreceived() flag to false
-    if (!GPS.parse(GPS.lastNMEA())) // this also sets the newNMEAreceived() flag to false
-      return; // we can fail to parse a sentence in which case we should just wait for another
-  }
-
-  // approximately every 2 seconds or so, print out the current stats
-  if (millis() - timer > 2000) {
-    timer = millis(); // reset the timer
-    Serial.print("\nTime: ");
-    if (GPS.hour < 10) { Serial.print('0'); }
-    Serial.print(GPS.hour, DEC); Serial.print(':');
-    if (GPS.minute < 10) { Serial.print('0'); }
-    Serial.print(GPS.minute, DEC); Serial.print(':');
-    if (GPS.seconds < 10) { Serial.print('0'); }
-    Serial.print(GPS.seconds, DEC); Serial.print('.');
-    if (GPS.milliseconds < 10) {
-      Serial.print("00");
-    } else if (GPS.milliseconds > 9 && GPS.milliseconds < 100) {
-      Serial.print("0");
-    }
-    Serial.println(GPS.milliseconds);
-    Serial.print("Date: ");
-    Serial.print(GPS.day, DEC); Serial.print('/');
-    Serial.print(GPS.month, DEC); Serial.print("/20");
-    Serial.println(GPS.year, DEC);
-    Serial.print("Fix: "); Serial.print((int)GPS.fix);
-    Serial.print(" quality: "); Serial.println((int)GPS.fixquality);
-    if (GPS.fix) {
-      Serial.print("Location: ");
-      Serial.print(GPS.latitude, 4); Serial.print(GPS.lat);
-      Serial.print(", ");
-      Serial.print(GPS.longitude, 4); Serial.println(GPS.lon);
-      Serial.print("Speed (knots): "); Serial.println(GPS.speed);
-      Serial.print("Angle: "); Serial.println(GPS.angle);
-      Serial.print("Altitude: "); Serial.println(GPS.altitude);
-      Serial.print("Satellites: "); Serial.println((int)GPS.satellites);
-      Serial.print("Antenna status: "); Serial.println((int)GPS.antenna);
-    }
-  }
-}
-
-  Serial.println("Adafruit GPS logging start test!");
-  delay(1000);
-  Serial.print("\nSTARTING LOGGING....");
-  if (GPS.LOCUS_StartLogger())
-    Serial.println(" STARTED!");
-  else
-    Serial.println(" no response for logging :(");
 
   /* ESC ARMING SEQUENCE */ /*
   Serial.println("Time to arm the ESCs");
@@ -610,8 +563,9 @@ void setup() {
 
   /* END OF ARMING SEQUENCE */
   
+  Serial.println();
+  Serial.println();
   Serial.println("SAIL Diagnostics Complete!");
-  sendMessage("S: SAIL rdy to go");
   delay(500);
   tone(Buzzer, 2000); delay(50); noTone(Buzzer); delay(75);
   tone(Buzzer, 2000); delay(50); noTone(Buzzer); delay(200);
@@ -638,6 +592,7 @@ void setup() {
     slide = slide - 40;
   }
   noTone(Buzzer);
+  sendMessage("S: SAIL rdy to go");
 }
 
 void loop() {
@@ -646,11 +601,6 @@ void loop() {
   float longitude = GPS.longitudeDegrees;
   float altitudeMSL = 3.28084 * (bmp.readAltitude(SEALEVELPRESSURE_INHG * 33.86389)); // Convert sea level pressure to hPa, then convert value in m to ft
   float altitudeAGL = (altitudeMSL) - GROUND_LEVEL_ELEVATION_FEET; // Convert altitude to feet and subtract ground level elevation 
-
-  if (GPSSerial.available()) {
-  char c = GPSSerial.read();
-  Serial.write(c);
-  }
  
  // Read IMU data
   float zAccel = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER).z();
@@ -660,7 +610,7 @@ void loop() {
   // Get current timestamp
   unsigned long currentMillis = millis();
   unsigned long signalStartTime = millis(); // Store the start time of waiting for signal
-  
+
   // Flush the receive buffer to discard any previous messages
   rf95.recv(nullptr, nullptr);
 

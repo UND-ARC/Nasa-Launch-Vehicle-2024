@@ -1,4 +1,4 @@
-// ADD sd card logging?
+// timeout clearing armed and check?
 
 #include <SPI.h>
 #include <RH_RF95.h>
@@ -39,7 +39,6 @@ bool sendMessage(String message) {
   if (rf95.send((uint8_t *)message.c_str(), message.length())) {
     rf95.waitPacketSent();
     Serial.println("Message sent successfully: " + message);
-    displayMessage(8, "Signal Sent");
     return true; // Message sent successfully 
   } else {
     Serial.println("Message failed: " + message);
@@ -49,19 +48,6 @@ bool sendMessage(String message) {
 
 // Function to display a message on the OLED display
 void displayMessage(int row, const char* message) {
-  int16_t textWidth = display.getCursorX(); // Get the width of the text
-  
-  // If text width exceeds the screen width, enable scrolling
-  if (textWidth > SCREEN_WIDTH) {
-    for (int16_t i = 0; i < textWidth - SCREEN_WIDTH; i++) {
-      display.clearDisplay(); // Clear the display
-      display.setCursor(-i, row * 8); // Set cursor position with offset for scrolling
-      display.println(message); // Print message
-      display.display(); // Display the message on the OLED
-      delay(100); // Adjust the delay to control scrolling speed
-    }
-  } else {
-    // Clear only the specified row
     display.fillRect(0, row * 8, SCREEN_WIDTH, 8, SSD1306_BLACK);
     display.setTextSize(1); // Set text size
     display.setTextColor(SSD1306_WHITE); // Set text color
@@ -69,6 +55,36 @@ void displayMessage(int row, const char* message) {
     display.println(message); // Print message
     display.display(); // Display the message on the OLED
   }
+
+void displayTime(unsigned long elapsedTime) {
+  // Convert elapsed time to hours, minutes, and seconds
+  unsigned long hours = elapsedTime / 3600000;
+  unsigned long minutes = (elapsedTime % 3600000) / 60000;
+  unsigned long seconds = (elapsedTime % 60000) / 1000;
+
+  // Display elapsed time on the first row
+  display.fillRect(0, 0, SCREEN_WIDTH, 8, SSD1306_BLACK);
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  // Print hours
+  if (hours < 10) {
+    display.print("0");
+  }
+  display.print(hours);
+  display.print(":");
+  // Print minutes
+  if (minutes < 10) {
+    display.print("0");
+  }
+  display.print(minutes);
+  display.print(":");
+  // Print seconds
+  if (seconds < 10) {
+    display.print("0");
+  }
+  display.print(seconds);
+  display.display();
 }
 
 void floatToString(float number, char* buffer, int bufferSize, int decimalDigits) {
@@ -163,8 +179,8 @@ void setup() {
     if (rf95.recv(buf, &len)) {
       Serial.print("Got reply: ");
       Serial.println((char*)buf);
-      displayMessage(1, "Got reply:");
-      displayMessage(1, (char*)buf);
+      Serial.print("RSSI: ");
+      Serial.println(rf95.lastRssi(), DEC);
       Serial.print("RSSI: ");
       Serial.println(rf95.lastRssi(), DEC);
     } else {
@@ -183,9 +199,12 @@ void setup() {
       uint8_t len = sizeof(buf);
       if (rf95.recv(buf, &len)) {
           Serial.print("Received reply from Fairing: ");
-          displayMessage(1, "Received reply");
-          displayMessage(2, (char*)buf);
           Serial.println((char*)buf);
+          Serial.print("RSSI: ");
+          Serial.println(rf95.lastRssi(), DEC);
+          displayMessage(6, (char*)buf);
+          Serial.print("Received message length: ");
+          Serial.println(len);
       } else {
           Serial.println("Receive from Fairing failed");
       }
@@ -196,46 +215,13 @@ void setup() {
 
   Serial.println("Setup Complete");
   displayMessage(1, "Setup Complete!");
+
 }
 
 void loop() {
   // Calculate elapsed time
   unsigned long elapsedTime = millis() - startTime;
 
-  // Convert elapsed time to hours, minutes, and seconds
-  unsigned long hours = elapsedTime / 3600000;
-  unsigned long minutes = (elapsedTime % 3600000) / 60000;
-  unsigned long seconds = (elapsedTime % 60000) / 1000;
-
-  // Display elapsed time on the first row
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  // Print hours
-  if (hours < 10) {
-    display.print("0");
-  }
-  display.print(hours);
-  display.print(":");
-  // Print minutes
-  if (minutes < 10) {
-    display.print("0");
-  }
-  display.print(minutes);
-  display.print(":");
-  // Print seconds
-  if (seconds < 10) {
-    display.print("0");
-  }
-  display.print(seconds);
-  display.display();
-
-  displayMessage(1, "Ground----");
-  displayMessage(3, "SAIL----");
-  displayMessage(5, "FAIRING----");
-  displayMessage(7, "Status---");
-  
   int armButtonState = digitalRead(ARM_BUTTON_PIN);
   int goButtonState = digitalRead(BUTTON_GO_PIN);
   int forceOpenButtonState = digitalRead(BUTTON_FORCE_OPEN_PIN);
@@ -262,7 +248,7 @@ void loop() {
     // Check if the message is from the Fairing
     if (strncmp((char*)buf, "F: ", 3) == 0) {
         // Display the Fairing message in row 7
-        displayMessage(7, (char*)(buf + 3)); // Skip the "F: " prefix
+        displayMessage(6, (char*)(buf + 3)); // Skip the "F: " prefix
     }
     // Check if the message is from SAIL
     else if (strncmp((char*)buf, "S: ", 3) == 0) {
@@ -272,6 +258,13 @@ void loop() {
   }
 
   rf95.recv(nullptr, nullptr);
+
+  displayMessage(1, "----Ground----");
+  displayMessage(3, "----SAIL----");
+  displayMessage(5, "----FAIRING----");
+
+  displayTime(elapsedTime);
+  
 
   if (armButtonState == LOW) {
     activationState = true;
@@ -284,38 +277,30 @@ void loop() {
   if (activationState) {
     if (armButtonState == LOW) {
       Serial.println("ARM button pressed!");
-      displayMessage(8, "ARMED!");
+      displayMessage(7, "ARMED!");
       if (goButtonState == LOW) {
         sendMessage("Go");
-        displayMessage(3, "Sent: GO!");
+        displayMessage(2, "Sent: GO!");
 
       } else if (forceOpenButtonState == LOW) {
         sendMessage("Force Open");
-        displayMessage(3, "Sent: Fairing Force Open");
-        
-      } else if (beginDescentButtonState == LOW) {
-        sendMessage("Begin Controlled Descent");
-        displayMessage(3, "Sent: Cont. Descent");
-        
+        displayMessage(2, "Sent: Fairing Force Open");
+      //} else if (beginDescentButtonState == LOW) {
+        //sendMessage("Begin Controlled Descent");
+        //displayMessage(2, "Sent: Cont. Descent");
       } else if (checkButtonState == LOW) {
         sendMessage("Check");
-        displayMessage(3, "Sent: Range Check");
-        
+        displayMessage(2, "Sent: Range Check");
       } else if (legButtonState == LOW) {
         sendMessage("Legs open");
-        displayMessage(3, "Sent: Legs open");
+        displayMessage(2, "Sent: Legs open");
         
       }
-    } else {
-      Serial.println("ARM button not pressed!");
-      displayMessage(8,"ARM button not pressed!");
-      delay(200);
-    }
+    } 
   } else {
-    if (goButtonState == LOW || forceOpenButtonState == LOW || beginDescentButtonState == LOW || checkButtonState == LOW || legButtonState == LOW) {
+    if (goButtonState == LOW || forceOpenButtonState == LOW || checkButtonState == LOW || legButtonState == LOW) {
       Serial.println("ARM not pressed!");
-      displayMessage(8,"ARM not pressed!");
-      //displayMessage(2,"Message not sent");
+      displayMessage(7,"ARM not pressed!");
       delay(200);
     }
   }

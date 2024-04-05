@@ -3,6 +3,7 @@
 // Longer messages not tested
 // 4S LiPo connected to MOSFET and MCU
 // Add SD logging?
+// Force open delay too long?
 
 #define SEALEVELPRESSURE_INHG 30.13   // Sea level pressure in inches of mercury, adjust as per your location
 #define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
@@ -36,6 +37,7 @@ Adafruit_BMP3XX bmp;
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
 bool sendMessage(String message) {
+  delay(200);
   if (rf95.send((uint8_t *)message.c_str(), message.length())) {  // message.length()+1?
     rf95.waitPacketSent();
     Serial.println("Message sent successfully: " + message);
@@ -219,7 +221,7 @@ void loop() {
       Serial.print("Altitude: ");
       Serial.print(altitudeAGL);
       Serial.println(" ft AGL");
-      String message = "F: Fairing @ ";
+      String message = "F: F @ ";
       message += String(altitudeAGL, 2); // Convert altitude to string with 2 decimal points precision
       message += " ft AGL";
       sendMessage(message);  
@@ -227,7 +229,7 @@ void loop() {
     }  else if (strcmp((char*)buf, "Force Open") == 0) {
       Serial.println("Force Open signal received.");
       Serial.println("Force Open, pyro firing for 5s.");
-      sendMessage("F: Force Open recieved.");
+      sendMessage("F: Force Open recv.");
       digitalWrite(PYRO, HIGH);
       delay(5000);
       digitalWrite(PYRO, LOW);
