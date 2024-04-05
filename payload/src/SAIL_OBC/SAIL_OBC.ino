@@ -1,10 +1,10 @@
+// Notes
 // MAY NEED TO DISABLE ARMING CODE FOR RC TO MANUALLY CONTROL
 // COMMAND FOR GPS LOCATION ON COMMAND, LOGGING, AND LAT/LONG on Check
-
+// Let's also log GPS altitude
 
 // SAIL Flight Computer Startup Diagnostics
-// Note1: Comment out "while(!Serial){} " in void setup before running on battery power!!!!
-// Note2: Comment out pyro channel test before connecting anything to pyro channel
+// Note1: Comment out pyro channel test before connecting anything to pyro channel
 // Define altimeter rating for current conditions
 
 #include <Wire.h>
@@ -25,7 +25,7 @@
 #define SIGNAL_TIMEOUT 5000 // Radio timeout value in milliseconds
 #define RF95_FREQ 915.0
 
-#define GPSSerial Serial1 // name of hw serial port
+#define GPSSerial Serial2 // pins 7 and 8 on Teensy 4.0
 
 #define GPSECHO  true // Set to 'true' if you want to debug and listen to the raw GPS sentences
 uint32_t timer = millis();
