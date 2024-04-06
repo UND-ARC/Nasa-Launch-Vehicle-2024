@@ -512,17 +512,6 @@ void setup() {
   delay(1000);
   }
 
-
-  // Create a file for logging
-  imuLogFile = SD.open("IMU_Log.txt", FILE_WRITE);
-  if (!imuLogFile) {
-    Serial.println("Error opening IMU log file!");
-   // return;
-  }
-
-    // Write headers to the log file
-  imuLogFile.println("Timestamp,Z Accel (m/s^2),Rotation Rate (rad/s),Z Velocity (m/s)");
-
   /********** END OF SD CARD *********/
   
 
@@ -712,21 +701,25 @@ void loop() {
 
    // Check if it's time to log data
   if (boostConfirmed && currentMillis - lastLogTime >= logInterval) {
-    // Write timestamp and IMU data to the log file
-    imuLogFile.print(currentMillis);
-    imuLogFile.print(",");
-    imuLogFile.print(zAccel);
-    imuLogFile.print(",");
-    imuLogFile.print(rotationRate);
-    imuLogFile.print(",");
-    imuLogFile.println(zVelocity);
+    imuLogFile = SD.open("IMU_Log.txt", FILE_WRITE);
+    if (imuLogFile) {
+      // Write timestamp and IMU data to the log file
+      imuLogFile.print(currentMillis);
+      imuLogFile.print(",");
+      imuLogFile.print(zAccel);
+      imuLogFile.print(",");
+      imuLogFile.print(rotationRate);
+      imuLogFile.print(",");
+      imuLogFile.println(zVelocity);
 
-    // Flush data to the SD card
-    imuLogFile.flush();
+      // Update last log time
+      lastLogTime = currentMillis;
 
-    // Update last log time
-    lastLogTime = currentMillis;
-  }
+      imuLogFile.close();
+    } else {
+      Serial.println("Error opening IMU log file!");
+      delay(100);
+    }
 
   if(!landed && boostConfirmed && altitudeAGL < 15) {
     landed = true;
@@ -744,5 +737,6 @@ void loop() {
 
     // Reset timer for next ping
     landingTime = millis();
+    }
   }
 }
