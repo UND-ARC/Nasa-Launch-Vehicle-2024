@@ -1,3 +1,4 @@
+
 #include <Wire.h>
 #include <SD.h>
 #include <SPI.h>
@@ -5,46 +6,47 @@
 #include <Adafruit_Sensor.h>
 #include <utility/imumaths.h>
 #include <Servo.h>
+#include "Adafruit_BMP3XX.h"
 #include <RH_RF95.h>
 #include <Adafruit_GPS.h>
-#include "pitches.h"
-#include <Adafruit_BMP3XX.h>
-#include <bmp3.h>
-#include <bmp3_defs.h>
+#include <pitches.h>
 
 // Constants
-#define SEALEVELPRESSURE_INHG 30.13
-#define GROUND_LEVEL_ELEVATION_FEET 830
-#define SIGNAL_TIMEOUT 5000
+#define SEALEVELPRESSURE_INHG 30.13   // Sea level pressure in inches of mercury, adjust as per your location
+#define GROUND_LEVEL_ELEVATION_FEET 830 // Ground level elevation in feet, adjust as per your location
+#define SIGNAL_TIMEOUT 5000 // Radio timeout value in milliseconds
 #define RF95_FREQ 915.0
+
+#define GPSSerial Serial2 // pins 7 and 8 on Teensy 4.0
+Adafruit_GPS GPS(&GPSSerial); // Connect to the GPS on the hardware port
+#define GPSECHO  false // Set to 'true' if you want to debug and listen to the raw GPS sentences
+uint32_t timer = millis();
 
 #define RFM95_CS 2
 #define RFM95_RST 1
 #define RFM95_INT 17
 
-#define GPSSerial Serial2
-#define GPSECHO false
-Adafruit_GPS GPS(&GPSSerial); // Connect to the GPS on the hardware port
-
-#define BNO055_SAMPLERATE_DELAY_MS (100)
-
-// Pin definitions
-int R_LED = 9;
-int G_LED = 3;
-int B_LED = 6;
-int Buzzer = 4;
-const int SDchipSelect = 5;
-uint32_t timer = millis();
-
 // Global variables
 Servo esc1;
-Servo esc2;
+Servo esc2; 
 Adafruit_BMP3XX bmp;
-Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, &Wire);
+Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, &Wire); // by default address is 0x29 or 0x28
 Sd2Card card;
 SdVolume volume;
 SdFile root;
 File imuLogFile;
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+
+//First, we'll set up the LEDs and buzzer
+int R_LED = 9;
+int G_LED = 3;
+int B_LED = 6;
+int Buzzer = 4;
+
+#define BNO055_SAMPLERATE_DELAY_MS (100)
+
+const int SDchipSelect = 5;
+
 unsigned long lastLogTime = 0;
 const unsigned long logInterval = 500; // Logging interval in milliseconds
 unsigned long liftoffStartTime = 0;
@@ -52,18 +54,15 @@ unsigned long landingTime = 0;
 bool liftoffDetected = false;
 bool boostConfirmed = false;
 bool landed = false;
-const float liftoffAccelerationThreshold = 15;
-const float boostAccelerationThreshold = 15;
+const float liftoffAccelerationThreshold = 15; // Acceleration threshold for liftoff detection in m/s^2
+const float boostAccelerationThreshold = 15;   // Acceleration threshold for boost confirmation in m/s^2
 int loopCount = 0;
+
 int PYRO = 21;
-unsigned long lastAltitudeCheckTime = 0;
-unsigned long timeoutDuration = 5000;
+
+unsigned long lastAltitudeCheckTime = 0; // Variable to store the last time altitude was checked
+unsigned long timeoutDuration = 5000; // Timeout duration in milliseconds
 unsigned long startTime;
-
-RH_RF95 rf95(RFM95_CS, RFM95_INT);
-
-
-// Functions
 
 void goodTone() {
   tone(Buzzer, 988); delay(150); noTone(Buzzer); delay(150);
@@ -155,11 +154,11 @@ void displaySensorDetails(void)
   delay(500);
 }
 
-/**************************************************************************/
-/*
-    Display some basic info about the BNO055 sensor status
-*/
-/**************************************************************************/
+/////////////////////
+
+    //Display some basic info about the BNO055 sensor status
+
+/////////////////////////////////////
 void displaySensorStatus(void)
 {
   /* Get the system status values (mostly for debugging purposes) */
