@@ -27,7 +27,7 @@ void setup() {
 
   lastTime = millis();
 
-  if (!SD.begin(10)) {
+  if (!SD.begin(5)) {
     Serial.println("SD card initialization failed!");
     while (1);
   }
